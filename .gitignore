@@ -45,6 +45,9 @@ vite.config.ts.*
 # Supabase
 .supabase/
 
+# Local Codex MCP configuration and OAuth state
+.codex/config.toml
+
 # Local development
 .serverless/
 .serverless_nextjs/

@@ -1,130 +1,151 @@
-# Connect Supabase and Deploy ClipX on Netlify
+# Supabase and Netlify Deployment Guide
 
-This project uses one Netlify site:
+Last reviewed: August 15, 2026
 
-- Netlify builds and serves the Vite frontend from `apps/web/dist`.
-- Requests to `/api/*` are routed to the Express API in a Netlify Function.
-- The API connects to the Supabase PostgreSQL database.
-- Authentication is handled by ClipX itself, not Supabase Auth.
-- Supabase credentials and database access remain on the server; they are not embedded in the Vite browser bundle.
+This guide reflects the current ClipX deployment architecture:
 
-The checked-in `netlify.toml` already contains the build command, publish directory, function directory, API redirects, SPA fallback, and Node.js version.
+- Netlify serves the Vite frontend from `apps/web/dist`.
+- Netlify Functions run the Express API.
+- `/api/*` is routed to the API by the checked-in `netlify.toml`.
+- The API connects to Supabase PostgreSQL from the server.
+- ClipX authentication remains application-managed; Supabase Auth is not used.
+- No database credential or Supabase client is exposed through the browser bundle.
 
-## Before you begin
+## Security rules
 
-You need:
+1. Never commit `.env`, database URLs, passwords, tokens, private keys, service-role keys, or administrator credentials.
+2. Never paste a real secret into documentation, a Git commit, an issue, a screenshot, build output, or a support message.
+3. Do not prefix secrets with `VITE_`. Vite embeds matching values in public frontend JavaScript.
+4. Store production secrets in Netlify's environment-variable manager and mark sensitive values as secret.
+5. Give Deploy Previews a separate non-production database or no database access.
+6. Run database migrations manually from a trusted environment. Do not run migrations inside request-handling functions.
+7. If a secret is exposed, rotate it immediately in Supabase or Netlify and redeploy.
 
-- A Supabase project.
-- A Netlify site connected to this Git repository.
-- Node.js 20 or newer installed locally.
-- The repository cloned locally and dependencies installed with `npm ci`.
+The repository's `.gitignore` excludes `.env` files. Example files must contain placeholders only.
 
-Never commit a database URL, database password, `.env` file, or administrator password to Git.
+## Environment variables
 
-## 1. Copy the two Supabase database URLs
+### Netlify production runtime
 
-1. Open the Supabase project dashboard.
-2. Select **Connect** at the top of the project.
-3. Copy these connection strings:
-   - **Direct connection** (port `5432`) for migrations and administrative scripts.
-   - **Transaction pooler** (port `6543`) for the deployed Netlify Function.
-4. Replace the password placeholder in each copied URL with the project's database password.
+| Name | Scope | Sensitive | Purpose |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | Functions | Yes | Supabase transaction-pooler connection used by the API |
+| `NODE_ENV` | Functions | No | Must be `production` so session cookies are secure |
+| `SESSION_DAYS` | Functions | No | Session duration; the application accepts `1` through `90` |
+| `CORS_ORIGINS` | Functions | No | Optional comma-separated origins for a genuinely separate frontend |
 
-Use the URLs as follows:
+### Local administration only
 
-| Variable | Supabase connection | Used by |
+| Name | Sensitive | Purpose |
 | --- | --- | --- |
-| `DIRECT_DATABASE_URL` | Direct connection, port `5432` | Local schema migration |
-| `DATABASE_URL` | Transaction pooler, port `6543` | Netlify Function at runtime |
+| `DIRECT_DATABASE_URL` | Yes | Direct or session-pooler connection for migrations and administration |
+| `ADMIN_EMAIL` | Personal data | Temporary input for administrator bootstrap |
+| `ADMIN_PASSWORD` | Yes | Temporary input for administrator bootstrap; minimum 12 characters |
+| `SQLITE_DATABASE_PATH` | Potentially | Optional source path for a local SQLite import |
 
-The transaction pooler is appropriate for serverless traffic. The project already disables prepared statements for compatibility with transaction pooling.
+Do not add `DIRECT_DATABASE_URL`, `ADMIN_EMAIL`, or `ADMIN_PASSWORD` to the deployed Netlify site. Remove temporary administrator values from the local `.env` after bootstrap.
 
-If the machine running the migration cannot reach Supabase's IPv6 direct endpoint, use the Supabase **Session pooler** connection on port `5432` for the migration instead.
+The application does not need a Supabase publishable key, anon key, project URL, or service-role key. It connects through the server-only `DATABASE_URL`.
 
-> If the database password contains reserved URL characters such as `@`, `:`, `/`, `?`, `#`, or `%`, URL-encode the password before placing it in the connection string.
+## 1. Prepare Supabase securely
 
-## 2. Apply the database schema
+1. Open the Supabase dashboard and select the correct project.
+2. Open the project's **Connect** panel.
+3. Copy the **Direct connection** for migrations.
+4. Copy the **Transaction pooler** connection for Netlify Functions.
+5. Store both values only in approved secret storage; do not paste them into this guide or commit them.
 
-From the repository root, run:
+Supabase currently recommends a direct connection on port `5432` for migrations and a transaction pooler on port `6543` for temporary serverless connections. If the trusted migration environment cannot reach the IPv6 direct endpoint, use the Supabase session pooler on port `5432` for the migration instead.
+
+The application already disables prepared statements and limits each serverless database client to one connection for transaction-pooler compatibility.
+
+## 2. Configure local deployment secrets
+
+From the repository root, create a local environment file from the placeholder template:
 
 ```bash
-DIRECT_DATABASE_URL='postgresql://YOUR_DIRECT_CONNECTION_STRING' npm run db:migrate
+cp .env.example .env
+chmod 600 .env
 ```
 
-A successful run prints:
+Open `.env` locally and replace only the required placeholders. Do not share or commit the completed file. Confirm that Git ignores it before continuing:
+
+```bash
+git check-ignore .env
+```
+
+The command should print `.env`. If it prints nothing, stop and fix `.gitignore` before adding any secret.
+
+## 3. Apply the database schema
+
+After setting `DIRECT_DATABASE_URL` in the ignored root `.env`, run:
+
+```bash
+npm ci
+npm run db:migrate
+```
+
+A successful migration prints:
 
 ```text
 Applied 0001_banking_schema.sql
 ```
 
-This creates the tables used by the API. Run migrations from a trusted local or CI environment, not inside a Netlify Function.
+Do not print the environment, enable shell tracing, or include a connection string directly in the command.
 
-### Optional: create the first administrator
+### Optional: bootstrap the first administrator
 
-Use the runtime pooler URL to create or promote an administrator:
+Temporarily add `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` of at least 12 characters to the ignored root `.env`, then run:
 
 ```bash
-DATABASE_URL='postgresql://YOUR_TRANSACTION_POOLER_STRING' \
-ADMIN_EMAIL='admin@example.com' \
-ADMIN_PASSWORD='use-a-long-unique-password' \
 npm run db:bootstrap-admin
 ```
 
-The password must contain at least 12 characters. Remove the credentials from shell history where appropriate and do not add `ADMIN_EMAIL` or `ADMIN_PASSWORD` to Netlify; they are only needed while running this command.
+After the command succeeds, remove both administrator values from `.env`. Do not store this password in Netlify or documentation.
 
-### Optional: copy existing local SQLite data
+### Optional: migrate local SQLite data
 
-If `clipx.db` contains data that must be moved to Supabase, apply the schema first and then run:
+Apply the PostgreSQL schema first, back up the target database, and then run:
 
 ```bash
-DIRECT_DATABASE_URL='postgresql://YOUR_DIRECT_CONNECTION_STRING' npm run db:migrate:sqlite
+npm run db:migrate:sqlite
 ```
 
-Back up the production database before repeating an import. Skip this step for a new installation.
+The importer uses `clipx.db` by default. Set `SQLITE_DATABASE_PATH` locally only when the source is elsewhere. Skip this step for a new deployment.
 
-## 3. Configure the Netlify site
+## 4. Confirm the Netlify project configuration
 
-If the repository is not connected yet:
+Connect the Git repository to one Netlify project and leave the base directory unset so Netlify builds from the repository root. The root `netlify.toml` is the source of truth.
 
-1. In Netlify, choose **Add new project** and import the Git repository.
-2. Keep the base directory at the repository root.
-3. Netlify should detect `netlify.toml`. Confirm the resolved settings are:
+Confirm the resolved settings:
 
-```text
-Build command: npm run build --workspace @clipx/web
-Publish directory: apps/web/dist
-Functions directory: apps/api/netlify/functions
-Node version: 20
-```
+| Setting | Value |
+| --- | --- |
+| Build command | `npm run build --workspace @clipx/web` |
+| Publish directory | `apps/web/dist` |
+| Functions directory | `apps/api/netlify/functions` |
+| Node.js build version | Value configured in `netlify.toml` |
 
-Do not set the Netlify base directory to `apps/web`; doing so prevents the root configuration and monorepo workspaces from resolving correctly.
+Do not set the base directory to `apps/web`; the build needs the root npm workspace and lockfile.
 
-## 4. Add the Netlify environment variables
+## 5. Add Netlify environment variables
 
-Open the site's environment-variable settings and add:
+In the Netlify project settings, open the environment-variable manager.
 
-```text
-DATABASE_URL=<Supabase transaction-pooler URL on port 6543>
-NODE_ENV=production
-SESSION_DAYS=7
-```
+1. Create `DATABASE_URL` using the Supabase **Transaction pooler** value.
+2. Mark it sensitive and scope it to **Functions** and the **Production** deploy context.
+3. Set `NODE_ENV` to `production` for Functions.
+4. Set `SESSION_DAYS` to an allowed integer.
+5. Add `CORS_ORIGINS` only when a separate browser origin calls the API.
+6. Save the variables and trigger a new production deploy.
 
-Set `DATABASE_URL` as a secret/sensitive value and make it available to **Functions** in the Production context. Never prefix a database URL, database password, service-role key, or other secret with `VITE_`: Vite embeds matching variables in the public browser bundle.
+Do not place secrets in `netlify.toml`; it is committed to Git. Do not make `DATABASE_URL` available to frontend build code.
 
-If Deploy Previews should use the API, give them a separate preview database rather than production credentials.
+For Deploy Previews, use a distinct preview Supabase project or omit `DATABASE_URL`. Never reuse the production database credential in an untrusted preview.
 
-Normally, do not add any of the following:
+## 6. Deploy
 
-- `DIRECT_DATABASE_URL`: migrations should not run during requests or deploys.
-- `SUPABASE_URL` or `SUPABASE_PUBLISHABLE_KEY`: the deployed ClipX application does not need these because its server connects through `DATABASE_URL`.
-- Supabase service-role key: it bypasses Row Level Security and must never be exposed to the browser.
-- `CORS_ORIGINS`: same-origin frontend/API requests already work. Add it only if a separate browser origin calls this API directly; use a comma-separated list of full origins such as `https://app.example.com,https://preview.example.com`.
-
-After changing a Netlify environment variable, trigger a new deploy so the function receives the new value.
-
-## 5. Deploy
-
-Before pushing, verify the project locally:
+Validate the repository before pushing:
 
 ```bash
 npm ci
@@ -133,72 +154,83 @@ npm test
 npm run build
 ```
 
-Commit and push the repository. Netlify will build and deploy automatically. Alternatively, open **Deploys** in Netlify and trigger a production deploy from the connected branch.
+Commit only source code, configuration without secrets, and placeholder environment examples. Push the deployment branch or trigger a production deploy in Netlify.
 
-The API and frontend share the same public domain. For example:
-
-```text
-Frontend: https://YOUR-SITE.netlify.app/
-API:      https://YOUR-SITE.netlify.app/api
-Health:   https://YOUR-SITE.netlify.app/api/health
-```
-
-## 6. Verify the connection
-
-Open the health endpoint:
+The frontend and API share one origin:
 
 ```text
-https://YOUR-SITE.netlify.app/api/health
+Frontend: https://<netlify-site-domain>/
+API:      https://<netlify-site-domain>/api
+Health:   https://<netlify-site-domain>/api/health
 ```
 
-The expected response resembles:
+Replace the placeholder locally; do not add a private/custom domain to this repository unless it is intentionally public.
+
+## 7. Verify without exposing data
+
+Open the health endpoint. A healthy deployment returns JSON containing:
 
 ```json
 {
   "status": "ok",
   "storage": "postgres",
-  "timestamp": "2026-01-01T00:00:00.000Z"
+  "timestamp": "<ISO-8601 timestamp>"
 }
 ```
 
 Then verify:
 
-1. The landing page loads.
-2. A new user can sign up, log out, and log back in.
-3. Refreshing a protected page keeps the session active.
-4. Directly opening a frontend route does not return a 404.
-5. Transfers and settings changes remain after a new deploy.
-6. The administrator account can access the admin area.
+1. The landing page loads over HTTPS.
+2. Signup, login, logout, and session refresh work.
+3. Direct navigation to frontend routes does not return a 404.
+4. Authorized transfers and settings changes persist after redeployment.
+5. Standard users cannot access administrator endpoints.
+6. The intended administrator can access the admin area.
 
-You can also open Supabase's Table Editor and confirm that signup creates records in `users`, `local_credentials`, `user_preferences`, and `sessions`.
+Use synthetic test accounts and non-sensitive test data. Do not paste customer records, session values, credentials, complete database errors, or full request headers into logs or reports.
 
 ## Troubleshooting
 
-### `/api/health` returns a server error
+### The health endpoint returns an error
 
-- Confirm Netlify has `DATABASE_URL`, not `DIRECT_DATABASE_URL`, for the function runtime.
-- Confirm the URL is the Supabase transaction pooler URL and uses port `6543`.
-- Check that the password placeholder was replaced and special characters were URL-encoded.
-- Check the latest function log in Netlify.
-- Confirm the Supabase project is running and the migration completed.
+- Confirm `DATABASE_URL` exists in the Netlify Production context and is scoped to Functions.
+- Confirm it is the transaction-pooler connection, not the migration connection.
+- Confirm the migration completed and the Supabase project is available.
+- Review Netlify Function logs, but redact usernames, hosts, connection strings, query parameters, cookies, and tokens before sharing any excerpt.
+- Rotate the database password if a log or screenshot exposed any part of the credential.
 
-### The build cannot find a workspace or package
+### The build cannot resolve a workspace
 
-- Keep Netlify's base directory at the repository root.
+- Leave the Netlify base directory unset.
 - Confirm `netlify.toml`, the root `package.json`, and `package-lock.json` are committed.
-- Use Node.js 20 or newer.
+- Confirm the build uses the Node.js version configured by the repository.
 
-### The site works, but signup or login fails
+### Login does not persist
 
-- Confirm `NODE_ENV=production` so the session cookie is marked `Secure`.
-- Use the Netlify HTTPS URL, not an HTTP mirror.
-- Inspect the Netlify Function logs for a database or schema error.
+- Confirm the site is using HTTPS.
+- Confirm `NODE_ENV=production` is available to the Function.
+- Inspect cookie behavior without copying cookie values into an issue or message.
 
-### Browser requests are blocked by CORS
+### Requests are blocked by CORS
 
-The deployed web app calls relative `/api/*` URLs. If a genuinely separate frontend calls the API, add its exact HTTPS origin to `CORS_ORIGINS` and redeploy.
+The Netlify-hosted frontend should call relative `/api/*` routes and normally needs no CORS override. If a separate frontend is required, set only its exact HTTPS origin in `CORS_ORIGINS` and redeploy.
+
+## Secret rotation checklist
+
+If a database URL or password is exposed:
+
+1. Reset the database password in Supabase.
+2. Replace `DATABASE_URL` in Netlify without displaying it in logs or chat.
+3. Replace `DIRECT_DATABASE_URL` in trusted local or CI secret storage.
+4. Trigger a clean production deploy.
+5. Remove the exposed value from logs and Git history using an approved incident-response process.
+6. Review Supabase and Netlify activity for unexpected access.
 
 ## Official references
 
 - [Supabase: Connect to your database](https://supabase.com/docs/guides/database/connecting-to-postgres)
-- [Netlify: Environment variables overview](https://docs.netlify.com/build/environment-variables/overview/)
+- [Supabase: Using Postgres.js](https://supabase.com/docs/guides/database/postgres-js)
+- [Netlify: Monorepo configuration](https://docs.netlify.com/build/configure-builds/monorepos/)
+- [Netlify: Manage build dependencies](https://docs.netlify.com/build/configure-builds/manage-dependencies/)
+- [Netlify: Configure Functions](https://docs.netlify.com/build/functions/configuration/)
+- [Netlify: Environment variables](https://docs.netlify.com/build/environment-variables/overview/)
