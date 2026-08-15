@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext.tsx';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { useToast } from '@/components/ui/use-toast';
 
 const loginSchema = z.object({
@@ -86,11 +87,11 @@ export default function LoginPage() {
               Password
             </label>
           </div>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             placeholder="••••••••"
             autoComplete="current-password"
+            visibilityLabel="password"
             {...register('password')}
             error={errors.password?.message}
           />

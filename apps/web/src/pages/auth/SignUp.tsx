@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext.tsx';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { useToast } from '@/components/ui/use-toast';
 
 const signUpSchema = z
@@ -90,11 +91,11 @@ export default function SignUpPage() {
           >
             Password
           </label>
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             placeholder="••••••••"
             autoComplete="new-password"
+            visibilityLabel="password"
             {...register('password')}
             error={errors.password?.message}
           />
@@ -110,11 +111,11 @@ export default function SignUpPage() {
           >
             Confirm Password
           </label>
-          <Input
+          <PasswordInput
             id="confirmPassword"
-            type="password"
             placeholder="••••••••"
             autoComplete="new-password"
+            visibilityLabel="password confirmation"
             {...register('confirmPassword')}
             error={errors.confirmPassword?.message}
           />

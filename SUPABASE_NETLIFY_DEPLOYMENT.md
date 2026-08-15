@@ -226,6 +226,8 @@ Use synthetic test accounts and non-sensitive test data. Do not paste customer r
 - Confirm `DATABASE_URL` exists in the Netlify Production context and is scoped to Functions.
 - Confirm it is the transaction-pooler connection, not the migration connection.
 - If the Function log reports `ENETUNREACH`, check that `DATABASE_URL` does not use the Supabase direct host on port `5432`. The direct endpoint may require IPv6; Netlify Functions and Netlify Dev should use the transaction pooler host on port `6543`.
+- Database operations have an application deadline shorter than Netlify's Function deadline. A stalled connection is discarded so later requests do not queue behind it. Responses identify a safe stage such as `admin.customer.database.create`; they never include SQL, credentials, or connection details.
+- If customer creation appears to time out, check whether the customer exists before submitting the form again. The database transaction may have committed before an older Function instance timed out while preparing its response.
 - Confirm the migration completed and the Supabase project is available.
 - Review Netlify Function logs, but redact usernames, hosts, connection strings, query parameters, cookies, and tokens before sharing any excerpt.
 - Rotate the database password if a log or screenshot exposed any part of the credential.
