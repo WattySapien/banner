@@ -2,9 +2,8 @@ export async function apiRequest(
   endpoint: string,
   method: string = "GET",
   data?: unknown,
-  baseUrl: string = import.meta.env.VITE_API_URL || "",
 ) {
-  const response = await fetch(`${baseUrl}${endpoint}`, {
+  const response = await fetch(endpoint, {
     method,
     credentials: "include",
     headers: data === undefined ? {} : { "Content-Type": "application/json" },

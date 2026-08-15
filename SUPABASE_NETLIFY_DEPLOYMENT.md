@@ -6,8 +6,7 @@ This project uses one Netlify site:
 - Requests to `/api/*` are routed to the Express API in a Netlify Function.
 - The API connects to the Supabase PostgreSQL database.
 - Authentication is handled by ClipX itself, not Supabase Auth.
-
-The frontend also includes an optional Supabase browser client at `apps/web/src/utils/supabase.ts`. It can be used for Supabase features that are intentionally exposed to the browser. ClipX banking and authentication operations continue to use the Express API and server-only PostgreSQL connection.
+- Supabase credentials and database access remain on the server; they are not embedded in the Vite browser bundle.
 
 The checked-in `netlify.toml` already contains the build command, publish directory, function directory, API redirects, SPA fallback, and Node.js version.
 
@@ -108,35 +107,20 @@ Open the site's environment-variable settings and add:
 DATABASE_URL=<Supabase transaction-pooler URL on port 6543>
 NODE_ENV=production
 SESSION_DAYS=7
-VITE_SUPABASE_URL=https://ulbgqqmdrgnfddkenxyz.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=<Supabase publishable key>
 ```
 
-Set `DATABASE_URL` as a secret/sensitive value and make it available to **Functions** in the Production context. Make both `VITE_` variables available to **Builds**, because Vite embeds them in the browser bundle at build time. A Supabase publishable key is designed for browser use, but it must only grant access protected by Row Level Security policies. Never put a database password or Supabase service-role key in a `VITE_` variable.
+Set `DATABASE_URL` as a secret/sensitive value and make it available to **Functions** in the Production context. Never prefix a database URL, database password, service-role key, or other secret with `VITE_`: Vite embeds matching variables in the public browser bundle.
 
 If Deploy Previews should use the API, give them a separate preview database rather than production credentials.
 
 Normally, do not add any of the following:
 
 - `DIRECT_DATABASE_URL`: migrations should not run during requests or deploys.
-- `VITE_API_URL`: the frontend calls same-origin `/api` routes through `netlify.toml`.
+- `SUPABASE_URL` or `SUPABASE_PUBLISHABLE_KEY`: the deployed ClipX application does not need these because its server connects through `DATABASE_URL`.
 - Supabase service-role key: it bypasses Row Level Security and must never be exposed to the browser.
 - `CORS_ORIGINS`: same-origin frontend/API requests already work. Add it only if a separate browser origin calls this API directly; use a comma-separated list of full origins such as `https://app.example.com,https://preview.example.com`.
 
 After changing a Netlify environment variable, trigger a new deploy so the function receives the new value.
-
-### Optional browser queries
-
-The Supabase package and client module are already present. Import the client only for tables with suitable Row Level Security policies:
-
-```ts
-import { supabase } from "@/utils/supabase";
-
-const { data, error } = await supabase.from("public_content").select();
-if (error) throw error;
-```
-
-Do not replace `apps/web/src/App.tsx` with Supabase's generic `todos` example. This repository already has its application routes and banking UI. Do not query `users`, credentials, sessions, accounts, cards, or transactions directly from the browser; those requests belong behind the existing `/api/*` authorization layer.
 
 ## 5. Deploy
 
@@ -212,7 +196,7 @@ You can also open Supabase's Table Editor and confirm that signup creates record
 
 ### Browser requests are blocked by CORS
 
-The deployed web app should call relative `/api/*` URLs. Remove an unnecessary `VITE_API_URL` override. If a genuinely separate frontend calls the API, add its exact HTTPS origin to `CORS_ORIGINS` and redeploy.
+The deployed web app calls relative `/api/*` URLs. If a genuinely separate frontend calls the API, add its exact HTTPS origin to `CORS_ORIGINS` and redeploy.
 
 ## Official references
 
