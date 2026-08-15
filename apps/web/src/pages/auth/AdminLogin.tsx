@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Brand } from "@/components/Brand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -63,7 +64,7 @@ export default function AdminLogin(){
           </div>
           <div className="space-y-2">
             <label htmlFor="admin-password" className="text-sm font-medium text-white/80">Password</label>
-            <Input id="admin-password" type="password" autoComplete="current-password" placeholder="Enter your password" className="border-white/10 bg-white/5 text-white placeholder:text-white/25" {...register("password")} error={errors.password?.message}/>
+            <PasswordInput id="admin-password" autoComplete="current-password" placeholder="Enter your password" visibilityLabel="administrator password" className="border-white/10 bg-white/5 text-white placeholder:text-white/25" {...register("password")} error={errors.password?.message}/>
           </div>
           <Button type="submit" className="w-full bg-emerald-300 text-[#102019] hover:bg-emerald-200" disabled={isSubmitting}>{isSubmitting?"Verifying access…":"Enter admin console"}</Button>
         </form>

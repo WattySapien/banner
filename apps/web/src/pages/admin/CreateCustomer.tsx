@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { AdminCustomer, CreateAdminCustomer } from "@clipx/contracts/admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
@@ -71,8 +72,8 @@ export default function CreateCustomer() {
               <div><Label htmlFor="newFirstName">First name</Label><Input id="newFirstName" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="mt-2" autoComplete="off" required /></div>
               <div><Label htmlFor="newLastName">Last name <span className="text-muted-foreground">(optional)</span></Label><Input id="newLastName" value={lastName} onChange={(event) => setLastName(event.target.value)} className="mt-2" autoComplete="off" /></div>
               <div className="sm:col-span-2"><Label htmlFor="newEmail">Email address</Label><Input id="newEmail" type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2" autoComplete="off" required /></div>
-              <div><Label htmlFor="newPassword">Account password</Label><Input id="newPassword" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2" autoComplete="new-password" minLength={8} error={password.length > 0 && password.length < 8 ? "Use at least 8 characters" : undefined} required /></div>
-              <div><Label htmlFor="confirmNewPassword">Confirm password</Label><Input id="confirmNewPassword" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="mt-2" autoComplete="new-password" minLength={8} error={confirmPassword.length > 0 && password !== confirmPassword ? "Passwords do not match" : undefined} required /></div>
+              <div><Label htmlFor="newPassword">Account password</Label><PasswordInput id="newPassword" value={password} onChange={(event) => setPassword(event.target.value)} containerClassName="mt-2" autoComplete="new-password" visibilityLabel="account password" minLength={8} error={password.length > 0 && password.length < 8 ? "Use at least 8 characters" : undefined} required /></div>
+              <div><Label htmlFor="confirmNewPassword">Confirm password</Label><PasswordInput id="confirmNewPassword" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} containerClassName="mt-2" autoComplete="new-password" visibilityLabel="password confirmation" minLength={8} error={confirmPassword.length > 0 && password !== confirmPassword ? "Passwords do not match" : undefined} required /></div>
               <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">The password is converted to a salted hash before it is stored. Administrators cannot view it afterward.</p>
             </div>
             <div className="mt-7 divide-y rounded-xl bg-muted/45 px-4"><ToggleRow title="Account active" description="Allow this customer to sign in immediately." checked={isActive} onCheckedChange={setIsActive}/><ToggleRow title="Administrator access" description="Grant access to operations and customer management." checked={isAdmin} onCheckedChange={setIsAdmin}/></div>

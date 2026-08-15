@@ -37,6 +37,7 @@ export default function BankingLayout({ children }: { children: React.ReactNode 
   const { data: accountUser } = useQuery<User>({ queryKey: ["/api/auth/user"] });
   const initials = `${accountUser?.firstName?.[0] ?? ""}${accountUser?.lastName?.[0] ?? ""}` || "LA";
   const isAdmin = Boolean(user?.isAdmin);
+  const showAdminConsole = isAdmin && import.meta.env.DEV;
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export default function BankingLayout({ children }: { children: React.ReactNode 
       </nav>
 
       <div className="mt-auto p-3">
-        {isAdmin && (
+        {showAdminConsole && (
           <NavLink to="/admin" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
             <ShieldCheck className="size-[18px]" strokeWidth={1.8} /> Admin console
           </NavLink>
