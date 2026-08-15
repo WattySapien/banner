@@ -6,6 +6,8 @@ import { createAdminCustomerSchema, updateAdminUserSchema } from "@clipx/contrac
 import { changePasswordSchema, updatePreferencesSchema, updateProfileSchema } from "@clipx/contracts/settings";
 import { localAuthSchema, type LocalAuthUser } from "@clipx/contracts/auth";
 import { config } from "./config.js";
+import { atStage } from "./diagnostics.js";
+import { isLocalRequest } from "./network-access.js";
 import type { IStorage } from "./storage.js";
 
 const SESSION_COOKIE="clipx_session";
@@ -20,8 +22,12 @@ const cookieOptions=(expires?:Date)=>["Path=/","HttpOnly","SameSite=Lax",config.
 async function issueSession(storage:IStorage,userId:string,res:Response){
   const token=randomBytes(32).toString("base64url");
   const expiresAt=new Date(Date.now()+config.sessionDays*86_400_000);
-  await storage.createSession(userId,hashToken(token),expiresAt);
+  await atStage("auth.session.create",()=>storage.createSession(userId,hashToken(token),expiresAt));
   res.setHeader("Set-Cookie",`${SESSION_COOKIE}=${token}; ${cookieOptions(expiresAt)}`);
+}
+
+function assertLocalAdminRequest(req:Request){
+  if(!isLocalRequest(req))throw Object.assign(new Error("Administrator access is limited to local network connections"),{status:403});
 }
 
 export function registerRoutes(app:Express,storage:IStorage) {
@@ -39,19 +45,27 @@ export function registerRoutes(app:Express,storage:IStorage) {
     next();
   });
 
-  app.get("/api/health",asyncRoute(async(_req,res)=>{await storage.ping();res.json({status:"ok",storage:storage.kind,timestamp:new Date().toISOString()});}));
+  app.get("/api/health",asyncRoute(async(_req,res)=>{await atStage("health.database.ping",()=>storage.ping());res.json({status:"ok",storage:storage.kind,timestamp:new Date().toISOString()});}));
   app.get("/api",asyncRoute(async(_req,res)=>{res.json({name:"ClipX Banking API",status:"production-ready"});}));
 
   app.post("/api/auth/local/signup",asyncRoute(async(req,res)=>{
     const {email,password}=localAuthSchema.parse(req.body);
-    const user=await storage.createLocalUser(email,password);
+    const user=await atStage("signup.user.create",()=>storage.createLocalUser(email,password));
     await issueSession(storage,user.id,res);
     res.status(201).json(user);
   }));
   app.post("/api/auth/local/login",asyncRoute(async(req,res)=>{
     const {email,password}=localAuthSchema.parse(req.body);
-    const user=await storage.authenticateLocalUser(email,password);
+    const user=await atStage("login.credentials.verify",()=>storage.authenticateLocalUser(email,password));
     if(!user) throw Object.assign(new Error("Invalid email or password"),{status:401});
+    await issueSession(storage,user.id,res);
+    res.json(user);
+  }));
+  app.post("/api/auth/admin/login",asyncRoute(async(req,res)=>{
+    assertLocalAdminRequest(req);
+    const {email,password}=localAuthSchema.parse(req.body);
+    const user=await atStage("admin_login.credentials.verify",()=>storage.authenticateLocalUser(email,password));
+    if(!user||!user.isAdmin) throw Object.assign(new Error("Invalid administrator credentials"),{status:401});
     await issueSession(storage,user.id,res);
     res.json(user);
   }));
@@ -86,7 +100,8 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.patch("/api/settings/preferences",asyncRoute(async(req,res)=>{res.json(await storage.updatePreferences(req.authUser.id,updatePreferencesSchema.parse(req.body)));}));
   app.patch("/api/settings/password",asyncRoute(async(req,res)=>{await storage.changePassword(req.authUser.id,changePasswordSchema.parse(req.body));await storage.deleteUserSessions(req.authUser.id);await issueSession(storage,req.authUser.id,res);res.status(204).end();}));
 
-  const assertAdmin=(req:AuthenticatedRequest)=>{if(!req.authUser.isAdmin) throw Object.assign(new Error("Administrator access required"),{status:403});};
+  const assertAdmin=(req:AuthenticatedRequest)=>{assertLocalAdminRequest(req);if(!req.authUser.isAdmin) throw Object.assign(new Error("Administrator access required"),{status:403});};
+  app.get("/api/admin/access",asyncRoute(async(req,res)=>{assertAdmin(req);res.json({allowed:true});}));
   app.get("/api/admin/stats",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminStats());}));
   app.get("/api/admin/users",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminUsers());}));
   app.post("/api/admin/users",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminUser(createAdminCustomerSchema.parse(req.body)));}));

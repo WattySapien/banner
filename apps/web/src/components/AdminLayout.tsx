@@ -24,7 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const logout = async () => {
     await signOut();
-    navigate("/login");
+    navigate("/admin/login");
   };
 
   return (

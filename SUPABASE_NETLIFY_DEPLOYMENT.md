@@ -85,6 +85,8 @@ npm ci
 npm run db:migrate
 ```
 
+The migration runner prefers `DIRECT_DATABASE_URL`. If that direct endpoint is unreachable from an IPv4-only development network and the runtime `DATABASE_URL` is a Supabase transaction-pooler URI, it retries through the corresponding session pooler on port `5432`. It does not retry SQL or schema errors, and it never prints connection strings.
+
 A successful migration prints:
 
 ```text
@@ -102,6 +104,14 @@ npm run db:bootstrap-admin
 ```
 
 After the command succeeds, remove both administrator values from `.env`. Do not store this password in Netlify or documentation.
+
+### Access the local-only administrator console
+
+Administrator authentication uses the dedicated `/admin/login` route. Both the login endpoint and every `/api/admin/*` endpoint accept only loopback, RFC 1918 private IPv4, IPv4 link-local, IPv6 unique-local, or IPv6 link-local client addresses. This restriction is enforced by the API and cannot be bypassed by navigating directly to an admin page.
+
+Start Netlify Dev and open `http://localhost:8888/admin/login` (or the port displayed by Netlify Dev). A successful administrator login redirects to `/admin`.
+
+The administrator console is intentionally unavailable through the public Netlify URL. Netlify sees internet visitors by their public address even when their device is on a private home or office network. Use Netlify Dev locally, or place a separately controlled private VPN/reverse proxy in front of the application if remote administration is required later.
 
 ### Optional: migrate local SQLite data
 
@@ -166,6 +176,26 @@ Health:   https://<netlify-site-domain>/api/health
 
 Replace the placeholder locally; do not add a private/custom domain to this repository unless it is intentionally public.
 
+### Reproduce the Netlify runtime locally
+
+The repository's `[dev]` configuration starts only the Vite frontend on the dedicated internal port `3999`; Netlify Dev serves the public proxy on port `8888` and runs the API as a Netlify Function. The npm command selects the web workspace explicitly so the CLI does not pause at a monorepo project prompt. This avoids starting the standalone development API alongside the Function emulator or colliding with the regular Vite server on port `3000`.
+
+Create an ignored root `.env` containing a non-production or otherwise explicitly approved Supabase transaction-pooler `DATABASE_URL`. Do not commit it, paste it into documentation, or pass it directly on the command line. Then run:
+
+```bash
+npm run dev:netlify
+```
+
+Verify these local endpoints:
+
+```text
+Frontend: http://localhost:8888/
+Health:   http://localhost:8888/api/health
+Signup:   http://localhost:8888/signup
+```
+
+The health response must report `"storage": "postgres"` before testing signup. Netlify Dev prints Function errors locally, which can distinguish a missing environment variable, rejected database connection, or unapplied migration without exposing the detailed error to the browser.
+
 ## 7. Verify without exposing data
 
 Open the health endpoint. A healthy deployment returns JSON containing:
@@ -195,6 +225,7 @@ Use synthetic test accounts and non-sensitive test data. Do not paste customer r
 
 - Confirm `DATABASE_URL` exists in the Netlify Production context and is scoped to Functions.
 - Confirm it is the transaction-pooler connection, not the migration connection.
+- If the Function log reports `ENETUNREACH`, check that `DATABASE_URL` does not use the Supabase direct host on port `5432`. The direct endpoint may require IPv6; Netlify Functions and Netlify Dev should use the transaction pooler host on port `6543`.
 - Confirm the migration completed and the Supabase project is available.
 - Review Netlify Function logs, but redact usernames, hosts, connection strings, query parameters, cookies, and tokens before sharing any excerpt.
 - Rotate the database password if a log or screenshot exposed any part of the credential.

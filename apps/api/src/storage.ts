@@ -1,11 +1,12 @@
 import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { getDatabase } from "@clipx/database";
+import { getDatabase, withDatabaseDeadline } from "@clipx/database";
 import type { User } from "@clipx/contracts/schema";
 import type { Account, BankCard, BankingOverview, BankTransaction, Beneficiary, CreateTransfer, UpdateCard } from "@clipx/contracts/banking";
 import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, CreateAdminCustomer, UpdateAdminUser } from "@clipx/contracts/admin";
 import type { AccountSettings, ChangePassword, UpdatePreferences, UpdateProfile } from "@clipx/contracts/settings";
 import type { LocalAuthUser } from "@clipx/contracts/auth";
+import { atStage } from "./diagnostics.js";
 
 const scrypt = promisify(nodeScrypt);
 const cents = (value: number) => Math.round(value * 100);
@@ -45,6 +46,8 @@ async function passwordMatches(password: string, salt: string, expectedHash: str
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+const atDatabaseStage=<T>(stage:string,operation:()=>Promise<T>)=>atStage(stage,()=>withDatabaseDeadline(operation));
+
 export interface IStorage {
   readonly kind: "postgres"|"sqlite";
   ping(): Promise<void>;
@@ -78,8 +81,10 @@ export class PostgresStorage implements IStorage {
   readonly kind = "postgres" as const;
 
   async ping(){
-    const sql=getDatabase();
-    await sql`SELECT 1`;
+    await atDatabaseStage("health.database.ping",async()=>{
+      const sql=getDatabase();
+      await sql`SELECT 1`;
+    });
   }
 
   async getUser(id:string) {
@@ -91,44 +96,44 @@ export class PostgresStorage implements IStorage {
   async createLocalUser(email:string,password:string) {
     const sql = getDatabase();
     const normalized = email.toLowerCase();
-    const [duplicate] = await sql`SELECT 1 FROM users WHERE lower(email)=lower(${normalized})`;
+    const [duplicate] = await atDatabaseStage("signup.database.check_duplicate",()=>sql`SELECT 1 FROM users WHERE lower(email)=lower(${normalized})`);
     if (duplicate) throw Object.assign(new Error("An account with this email already exists"), { status:409 });
     const id = randomUUID();
     const localPart = normalized.split("@")[0] || "Account";
     const firstName = localPart.split(/[._-]/).filter(Boolean).map((part) => `${part[0]?.toUpperCase()}${part.slice(1)}`).join(" ") || "Account";
-    const credential = await createPasswordHash(password);
-    await sql.begin(async (tx) => {
+    const credential = await atStage("signup.password.hash",()=>createPasswordHash(password));
+    await atDatabaseStage("signup.database.create_user",()=>sql.begin(async (tx) => {
       await tx`INSERT INTO users (id,email,first_name,last_name) VALUES (${id},${normalized},${firstName},'')`;
       await tx`INSERT INTO user_preferences (user_id) VALUES (${id})`;
       await tx`INSERT INTO local_credentials (user_id,password_hash,password_salt) VALUES (${id},${credential.hash},${credential.salt})`;
-    });
+    }));
     return { id, email:normalized, firstName, lastName:"", isAdmin:false };
   }
 
   async authenticateLocalUser(email:string,password:string) {
     const sql = getDatabase();
-    const [row] = await sql<Array<UserRow & { password_hash:string; password_salt:string }>>`
+    const [row] = await atDatabaseStage("login.database.find_credentials",()=>sql<Array<UserRow & { password_hash:string; password_salt:string }>>`
       SELECT u.*,c.password_hash,c.password_salt FROM users u
       JOIN local_credentials c ON c.user_id=u.id
-      WHERE lower(u.email)=lower(${email})`;
-    if (!row || !row.is_active || !(await passwordMatches(password,row.password_salt,row.password_hash))) return undefined;
-    await sql`UPDATE users SET last_active_at=now() WHERE id=${row.id}`;
+      WHERE lower(u.email)=lower(${email})`);
+    if (!row || !row.is_active || !(await atStage("login.password.verify",()=>passwordMatches(password,row.password_salt,row.password_hash)))) return undefined;
+    await atDatabaseStage("login.database.record_activity",()=>sql`UPDATE users SET last_active_at=now() WHERE id=${row.id}`);
     return toLocalUser(row);
   }
 
   async createSession(userId:string,tokenHash:string,expiresAt:Date) {
     const sql = getDatabase();
-    await sql.begin(async (tx) => {
+    await atDatabaseStage("auth.session.create",()=>sql.begin(async (tx) => {
       await tx`DELETE FROM sessions WHERE expires_at <= now()`;
       await tx`INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (${tokenHash},${userId},${expiresAt})`;
-    });
+    }));
   }
 
   async getSessionUser(tokenHash:string) {
     const sql = getDatabase();
-    const [row] = await sql<UserRow[]>`
+    const [row] = await atDatabaseStage("auth.session.read",()=>sql<UserRow[]>`
       SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id
-      WHERE s.token_hash=${tokenHash} AND s.expires_at>now() AND u.is_active=1`;
+      WHERE s.token_hash=${tokenHash} AND s.expires_at>now() AND u.is_active=1`);
     return row ? toLocalUser(row) : undefined;
   }
 
@@ -233,36 +238,36 @@ export class PostgresStorage implements IStorage {
 
   async getAdminStats(): Promise<AdminStats> {
     const sql=getDatabase();
-    const [row]=await sql<Array<{total:number;active:number;balance_cents:number;volume_cents:number;pending:number}>>`
+    const [row]=await atDatabaseStage("admin.stats.database.read",()=>sql<Array<{total:number;active:number;balance_cents:number;volume_cents:number;pending:number}>>`
       SELECT (SELECT count(*)::int FROM users WHERE is_admin=0) total,
       (SELECT count(*)::int FROM users WHERE is_admin=0 AND is_active=1) active,
       (SELECT coalesce(sum(balance_cents),0)::bigint FROM accounts) balance_cents,
       (SELECT coalesce(sum(amount_cents),0)::bigint FROM transactions WHERE status='completed') volume_cents,
-      (SELECT count(*)::int FROM transactions WHERE status='pending') pending`;
+      (SELECT count(*)::int FROM transactions WHERE status='pending') pending`);
     return {totalCustomers:Number(row.total),activeCustomers:Number(row.active),managedBalance:dollars(row.balance_cents),processedVolume:dollars(row.volume_cents),pendingTransactions:Number(row.pending),systemStatus:"operational"};
   }
 
   async getAdminUsers() {
     const sql=getDatabase();
-    const rows=await sql<Array<UserRow & {balance_cents:number}>>`SELECT u.*,coalesce(sum(a.balance_cents),0)::bigint balance_cents FROM users u LEFT JOIN accounts a ON a.user_id=u.id GROUP BY u.id ORDER BY u.last_active_at DESC`;
+    const rows=await atDatabaseStage("admin.users.database.read",()=>sql<Array<UserRow & {balance_cents:number}>>`SELECT u.*,coalesce(sum(a.balance_cents),0)::bigint balance_cents FROM users u LEFT JOIN accounts a ON a.user_id=u.id GROUP BY u.id ORDER BY u.last_active_at DESC`);
     return rows.map((row)=>({id:row.id,email:row.email,firstName:row.first_name,lastName:row.last_name,initials:`${row.first_name[0]??""}${row.last_name[0]??""}`||"CX",isAdmin:Boolean(row.is_admin),isActive:Boolean(row.is_active),balance:dollars(row.balance_cents),createdAt:iso(row.created_at),lastActiveAt:iso(row.last_active_at)}));
   }
 
   async createAdminUser(input:CreateAdminCustomer) {
     const sql=getDatabase();
-    const [duplicate]=await sql`SELECT 1 FROM users WHERE lower(email)=lower(${input.email})`;
+    const [duplicate]=await atDatabaseStage("admin.customer.database.check_duplicate",()=>sql`SELECT 1 FROM users WHERE lower(email)=lower(${input.email})`);
     if(duplicate) throw Object.assign(new Error("Another account already uses this email"),{status:409});
     const userId=randomUUID();
-    const credential=await createPasswordHash(input.password);
-    await sql.begin(async(tx)=>{
-      await tx`INSERT INTO users (id,email,first_name,last_name,is_admin,is_active) VALUES (${userId},${input.email.toLowerCase()},${input.firstName},${input.lastName},${Number(input.isAdmin)},${Number(input.isActive)})`;
+    const credential=await atStage("admin.customer.password.hash",()=>createPasswordHash(input.password));
+    const balance=input.account?cents(input.account.openingBalance):0;
+    const user=await atDatabaseStage("admin.customer.database.create",()=>sql.begin(async(tx)=>{
+      const [created]=await tx<UserRow[]>`INSERT INTO users (id,email,first_name,last_name,is_admin,is_active) VALUES (${userId},${input.email.toLowerCase()},${input.firstName},${input.lastName},${Number(input.isAdmin)},${Number(input.isActive)}) RETURNING *`;
       await tx`INSERT INTO user_preferences (user_id) VALUES (${userId})`;
       await tx`INSERT INTO local_credentials (user_id,password_hash,password_salt) VALUES (${userId},${credential.hash},${credential.salt})`;
-      if(input.account){const balance=cents(input.account.openingBalance);await tx`INSERT INTO accounts (id,user_id,name,type,masked_number,balance_cents,available_balance_cents) VALUES (${randomUUID()},${userId},${input.account.name},${input.account.type},${input.account.maskedNumber},${balance},${balance})`;}
-    });
-    const customer=(await this.getAdminUsers()).find((item)=>item.id===userId);
-    if(!customer) throw Object.assign(new Error("Customer could not be created"),{status:500});
-    return customer;
+      if(input.account)await tx`INSERT INTO accounts (id,user_id,name,type,masked_number,balance_cents,available_balance_cents) VALUES (${randomUUID()},${userId},${input.account.name},${input.account.type},${input.account.maskedNumber},${balance},${balance})`;
+      return created;
+    }));
+    return {id:user.id,email:user.email,firstName:user.first_name,lastName:user.last_name,initials:`${user.first_name[0]??""}${user.last_name[0]??""}`||"CX",isAdmin:Boolean(user.is_admin),isActive:Boolean(user.is_active),balance:dollars(balance),createdAt:iso(user.created_at),lastActiveAt:iso(user.last_active_at)};
   }
 
   async getAdminUserDetails(userId:string): Promise<AdminCustomerDetails> {
@@ -288,7 +293,7 @@ export class PostgresStorage implements IStorage {
 
   async getAdminTransactions() {
     const sql=getDatabase();
-    const rows=await sql<Array<TransactionRow & {customer_id:string;customer_name:string}>>`SELECT t.*,u.id customer_id,trim(u.first_name||' '||u.last_name) customer_name FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN users u ON u.id=a.user_id ORDER BY t.created_at DESC`;
+    const rows=await atDatabaseStage("admin.transactions.database.read",()=>sql<Array<TransactionRow & {customer_id:string;customer_name:string}>>`SELECT t.*,u.id customer_id,trim(u.first_name||' '||u.last_name) customer_name FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN users u ON u.id=a.user_id ORDER BY t.created_at DESC`);
     return rows.map((row)=>({...toTransaction(row),customerId:row.customer_id,customerName:row.customer_name,risk:Number(row.amount_cents)>=cents(2500)||row.status==="failed"?"review" as const:"standard" as const}));
   }
 }

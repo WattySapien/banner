@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import { config } from "./config.js";
-import { log } from "./logger.js";
+import { classifyError, errorType } from "./diagnostics.js";
+import { logEvent } from "./logger.js";
 import { registerRoutes } from "./routes.js";
 import { storage as postgresStorage,type IStorage } from "./storage.js";
 
@@ -13,20 +15,23 @@ export function createApp(storage:IStorage=postgresStorage) {
   app.use(express.json({ limit:"1mb" }));
   app.use(express.urlencoded({ extended:false, limit:"1mb" }));
   app.use((req,res,next)=>{
+    const suppliedRequestId=req.header("x-request-id")?.trim();
+    const requestId=suppliedRequestId&&/^[A-Za-z0-9._-]{1,128}$/.test(suppliedRequestId)?suppliedRequestId:randomUUID();
     const startedAt=performance.now();
-    res.on("finish",()=>{if(req.path.startsWith("/api")) log(`${req.method} ${req.path} ${res.statusCode} ${Math.round(performance.now()-startedAt)}ms`,"http");});
+    res.locals.requestId=requestId;
+    res.setHeader("X-Request-Id",requestId);
+    res.on("finish",()=>{
+      if(req.path.startsWith("/api")) logEvent("request_completed",{requestId,method:req.method,path:req.path,status:res.statusCode,durationMs:Math.round(performance.now()-startedAt)},"http");
+    });
     next();
   });
   registerRoutes(app,storage);
   app.use("/api",(_req,res)=>res.status(404).json({message:"API endpoint not found"}));
-  app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{
-    if(error&&typeof error==="object"&&"code" in error&&error.code==="23505"){
-      res.status(409).json({message:"A record with those details already exists"});
-      return;
-    }
-    const message=error instanceof Error?error.message:"Internal Server Error";
-    log(message,"error");
-    if(!res.headersSent) res.status(500).json({message:"Internal Server Error"});
+  app.use((error:unknown,req:Request,res:Response,_next:NextFunction)=>{
+    const diagnostic=classifyError(error);
+    const requestId=typeof res.locals.requestId==="string"?res.locals.requestId:"unknown";
+    logEvent("request_failed",{requestId,method:req.method,path:req.path,status:diagnostic.status,code:diagnostic.code,stage:diagnostic.stage,errorType:errorType(error)},"error");
+    if(!res.headersSent) res.status(diagnostic.status).json({message:diagnostic.message,code:diagnostic.code,stage:diagnostic.stage,requestId});
   });
   return app;
 }

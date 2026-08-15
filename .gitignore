@@ -32,6 +32,8 @@ yarn-error.log*
 *.sw?
 
 # Local development
+.netlify/
+deno.lock
 .serverless/
 .serverless_nextjs/
 clipx.db
