@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom ticker animation */
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-scroll {
+  animation: ticker-scroll 30s linear infinite;
+}
+
+.ticker-scroll:hover {
+  animation-play-state: paused;
+}
+
+:root {
+  --background: hsl(80, 14%, 97%);
+  --foreground: hsl(155, 29%, 11%);
+  --muted: hsl(110, 12%, 93%);
+  --muted-foreground: hsl(156, 10%, 40%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(222, 84%, 5%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(155, 29%, 11%);
+  --border: hsl(150, 12%, 87%);
+  --input: hsl(150, 12%, 84%);
+  --primary: hsl(161, 53%, 27%);
+  --primary-foreground: hsl(80, 14%, 97%);
+  --secondary: hsl(144, 18%, 88%);
+  --secondary-foreground: hsl(155, 29%, 11%);
+  --accent: hsl(130, 14%, 92%);
+  --accent-foreground: hsl(155, 29%, 11%);
+  --destructive: hsl(0, 84%, 60%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(161, 53%, 27%);
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: hsl(155, 24%, 8%);
+  --foreground: hsl(90, 12%, 94%);
+  --muted: hsl(154, 17%, 14%);
+  --muted-foreground: hsl(150, 9%, 65%);
+  --popover: hsl(155, 22%, 10%);
+  --popover-foreground: hsl(90, 12%, 94%);
+  --card: hsl(155, 22%, 10%);
+  --card-foreground: hsl(90, 12%, 94%);
+  --border: hsl(153, 14%, 20%);
+  --input: hsl(153, 14%, 23%);
+  --primary: hsl(151, 33%, 62%);
+  --primary-foreground: hsl(155, 29%, 10%);
+  --secondary: hsl(154, 17%, 16%);
+  --secondary-foreground: hsl(90, 12%, 94%);
+  --accent: hsl(154, 17%, 16%);
+  --accent-foreground: hsl(90, 12%, 94%);
+  --destructive: hsl(0, 63%, 31%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(212, 12%, 84%);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection { background: hsl(151 33% 62% / 0.35); }
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 60;
+  transform: translateY(-200%);
+  border-radius: 0.5rem;
+  background: var(--foreground);
+  color: var(--background);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus { transform: translateY(0); }

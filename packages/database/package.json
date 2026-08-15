@@ -1,0 +1,26 @@
+{
+  "name": "@clipx/database",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "node --import tsx src/migrate.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "20.16.11",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.20.3",
+    "typescript": "5.6.3"
+  }
+}

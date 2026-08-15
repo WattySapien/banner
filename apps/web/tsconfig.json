@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["api/**/*", "src/**/*", "vite.config.ts", "tailwind.config.ts"],
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
