@@ -29,6 +29,7 @@ export type AccountSettings = {
     firstName: string;
     lastName: string;
     email: string;
+    profileImageUrl: string | null;
   };
   preferences: UserPreferences;
 };

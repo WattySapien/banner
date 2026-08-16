@@ -8,7 +8,9 @@ import {
   ShoppingBag,
   ShoppingBasket,
   Utensils,
+  ChevronRight,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { BankTransaction } from "@clipx/contracts/banking";
 import { formatCurrency, formatDate } from "@/lib/banking";
 
@@ -23,7 +25,7 @@ const icons = {
   shopping: ShoppingBag,
 };
 
-export function TransactionList({ transactions, compact = false }: { transactions: BankTransaction[]; compact?: boolean }) {
+export function TransactionList({ transactions, compact = false, detailsBasePath = "/activity" }: { transactions: BankTransaction[]; compact?: boolean; detailsBasePath?: string }) {
   if (transactions.length === 0) {
     return (
       <div className="grid min-h-48 place-items-center rounded-2xl bg-muted/55 p-8 text-center">
@@ -37,13 +39,13 @@ export function TransactionList({ transactions, compact = false }: { transaction
   }
 
   return (
-    <div className="divide-y">
+    <div className="divide-y" data-motion-list>
       {transactions.map((transaction) => {
         const Icon = icons[transaction.category];
         const isCredit = transaction.direction === "credit";
         return (
-          <article key={transaction.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 py-4 first:pt-0 last:pb-0 sm:gap-4">
-            <div className="grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground">
+          <Link key={transaction.id} to={`${detailsBasePath}/${encodeURIComponent(transaction.id)}`} className="group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl py-3.5 outline-none transition-colors first:pt-0 last:pb-0 hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-ring sm:gap-4 sm:px-2 sm:py-4">
+            <div className="grid size-9 place-items-center rounded-xl bg-muted text-muted-foreground sm:size-10">
               <Icon className="size-[18px]" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -53,10 +55,8 @@ export function TransactionList({ transactions, compact = false }: { transaction
               </div>
               <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">{compact ? formatDate(transaction.createdAt) : `${transaction.description} | ${formatDate(transaction.createdAt)}`}</p>
             </div>
-            <p className={`font-mono text-sm font-semibold tabular-nums sm:text-[15px] ${isCredit ? "text-primary" : "text-foreground"}`}>
-              {isCredit ? "+" : "-"}{formatCurrency(transaction.amount)}
-            </p>
-          </article>
+            <div className="flex items-center gap-0.5"><p className={`max-w-[6.5rem] truncate font-mono text-xs font-semibold tabular-nums sm:max-w-none sm:text-[15px] ${isCredit ? "text-primary" : "text-foreground"}`}>{isCredit ? "+" : "-"}{formatCurrency(transaction.amount)}</p><ChevronRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 sm:size-4" aria-hidden="true"/></div>
+          </Link>
         );
       })}
     </div>

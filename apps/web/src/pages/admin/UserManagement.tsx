@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
 import type { AdminCustomer, UpdateAdminUser } from "@clipx/contracts/admin";
 import { Button } from "@/components/ui/button";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/api";
@@ -38,10 +39,10 @@ export default function UserManagement() {
   }), [filter, search, users]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div><p className="text-sm text-muted-foreground">Access and permissions</p><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Customers</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">Search customer records, suspend account access, and control administrative permissions.</p></div>
-        <Button asChild><Link to="/admin/users/new"><UserRoundCheck className="mr-2 size-4"/>Add customer</Link></Button>
+        <Button className="w-full sm:w-auto" asChild><Link to="/admin/users/new"><UserRoundCheck className="mr-2 size-4"/>Add customer</Link></Button>
       </header>
 
       <section className="rounded-2xl border bg-card">
@@ -59,18 +60,18 @@ export default function UserManagement() {
             {filteredUsers.map((user) => (
               <article key={user.id} role="link" tabIndex={0} onClick={() => navigate(`/admin/users/${user.id}`)} onKeyDown={(event) => { if (event.key === "Enter") navigate(`/admin/users/${user.id}`); }} className="group grid cursor-pointer gap-5 p-4 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-5 lg:grid-cols-[minmax(16rem,1.2fr)_0.7fr_0.7fr_auto] lg:items-center">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">{user.initials}</div>
+                  <ProfileAvatar src={user.profileImageUrl} initials={user.initials} alt={`${user.firstName} ${user.lastName} profile`} className="size-11"/>
                   <div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{user.firstName} {user.lastName}</h2>{user.isAdmin && <ShieldCheck className="size-4 shrink-0 text-primary" aria-label="Administrator" />}</div><p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p></div>
                 </div>
                 <div><p className="text-xs text-muted-foreground">Managed balance</p><p className="mt-1 font-mono text-sm font-semibold tabular-nums">{formatCurrency(user.balance)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Last active</p><p className="mt-1 text-sm font-medium">{formatRelativeDate(user.lastActiveAt)}</p></div>
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap lg:justify-end">
                   <span className={cn("rounded-md px-2 py-1 text-xs font-medium", user.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{user.isActive ? "Active" : "Suspended"}</span>
                   <Button variant="outline" size="sm" disabled={updateUser.isPending} onClick={(event) => { event.stopPropagation(); updateUser.mutate({ id: user.id, update: { isActive: !user.isActive } }); }}>
                     {user.isActive ? <UserRoundX className="mr-2 size-4" /> : <UserRoundCheck className="mr-2 size-4" />}{user.isActive ? "Suspend" : "Restore"}
                   </Button>
                   <Button variant="ghost" size="sm" disabled={updateUser.isPending} onClick={(event) => { event.stopPropagation(); updateUser.mutate({ id: user.id, update: { isAdmin: !user.isAdmin } }); }}>{user.isAdmin ? "Remove admin" : "Make admin"}</Button>
-                  <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                  <ChevronRight className="hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 sm:block" aria-hidden="true" />
                 </div>
               </article>
             ))}

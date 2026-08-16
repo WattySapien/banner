@@ -8,7 +8,7 @@ dotenv.config({path:path.resolve(import.meta.dirname,"../../../.env"),quiet:true
 const url = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!url) throw new Error("DIRECT_DATABASE_URL or DATABASE_URL is required");
 
-const migrationFiles = ["0001_banking_schema.sql", "0002_account_numbers.sql", "0003_internal_transfers.sql", "0004_peer_transfers.sql"];
+const migrationFiles = ["0001_banking_schema.sql", "0002_account_numbers.sql", "0003_internal_transfers.sql", "0004_peer_transfers.sql", "0005_card_issuance_notifications.sql", "0006_user_avatars.sql", "0007_account_holder_names.sql"];
 const migrations = await Promise.all(migrationFiles.map((file) => fs.readFile(path.resolve(import.meta.dirname, `../migrations/${file}`), "utf8")));
 const migration = migrations.join("\n");
 const candidates: Array<{ label:string; url:string }> = [{ label:"direct", url }];

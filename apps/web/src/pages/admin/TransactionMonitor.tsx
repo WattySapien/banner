@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Search } from "lucide-react";
 import type { AdminTransaction } from "@clipx/contracts/admin";
+import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/banking";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 type TransactionFilter = "all" | "completed" | "pending" | "review";
 
 export default function TransactionMonitor() {
+  const navigate=useNavigate();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TransactionFilter>("all");
   const { data: transactions = [], isLoading } = useQuery<AdminTransaction[]>({ queryKey: ["/api/admin/transactions"] });
@@ -23,14 +25,14 @@ export default function TransactionMonitor() {
   const completedVolume = transactions.filter((transaction) => transaction.status === "completed").reduce((sum, transaction) => sum + transaction.amount, 0);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <header>
         <p className="text-sm text-muted-foreground">Money movement</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Transaction ledger</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">Inspect payment activity, pending movements, and transactions marked for review.</p>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-3" aria-label="Transaction summary">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4" aria-label="Transaction summary">
         <Summary label="Recorded transactions" value={transactions.length.toLocaleString()} />
         <Summary label="Completed volume" value={formatCurrency(completedVolume)} />
         <Summary label="Review queue" value={reviewCount.toLocaleString()} attention={reviewCount > 0} />
@@ -44,12 +46,19 @@ export default function TransactionMonitor() {
           </div>
         </div>
 
-        {isLoading ? <LedgerSkeleton /> : filtered.length === 0 ? <div className="px-6 py-16 text-center"><Search className="mx-auto size-6 text-muted-foreground"/><h2 className="mt-4 font-semibold">No transactions found</h2><p className="mt-1 text-sm text-muted-foreground">Adjust your search or ledger filter.</p></div> : (
-          <div className="overflow-x-auto">
+        {isLoading ? <LedgerSkeleton /> : filtered.length === 0 ? <div className="px-6 py-16 text-center"><Search className="mx-auto size-6 text-muted-foreground"/><h2 className="mt-4 font-semibold">No transactions found</h2><p className="mt-1 text-sm text-muted-foreground">Adjust your search or ledger filter.</p></div> : (<>
+          <div className="divide-y sm:hidden">
+            {filtered.map((transaction)=><button key={transaction.id} type="button" onClick={()=>navigate(`/admin/transactions/${encodeURIComponent(transaction.id)}`)} className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-4 text-left transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-muted/45">
+              <span className={cn("grid size-10 place-items-center rounded-xl",transaction.direction==="credit"?"bg-primary/10 text-primary":"bg-muted text-muted-foreground")}>{transaction.direction==="credit"?<ArrowDownLeft className="size-4"/>:<ArrowUpRight className="size-4"/>}</span>
+              <span className="min-w-0"><span className="block truncate text-sm font-semibold">{transaction.merchant}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{transaction.customerName} · {transaction.status}</span></span>
+              <span className={cn("max-w-[6.5rem] truncate font-mono text-xs font-semibold tabular-nums",transaction.direction==="credit"&&"text-primary")}>{transaction.direction==="debit"?"−":"+"}{formatCurrency(transaction.amount)}</span>
+            </button>)}
+          </div>
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b bg-muted/35 text-xs text-muted-foreground"><tr><th className="px-5 py-3 font-medium">Transaction</th><th className="px-5 py-3 font-medium">Customer</th><th className="px-5 py-3 font-medium">Date</th><th className="px-5 py-3 font-medium">Status</th><th className="px-5 py-3 text-right font-medium">Amount</th></tr></thead>
               <tbody className="divide-y">{filtered.map((transaction) => (
-                <tr key={transaction.id} className="transition-colors hover:bg-muted/25">
+                <tr key={transaction.id} role="link" tabIndex={0} aria-label={`View ${transaction.merchant} transaction details`} onClick={()=>navigate(`/admin/transactions/${encodeURIComponent(transaction.id)}`)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();navigate(`/admin/transactions/${encodeURIComponent(transaction.id)}`);}}} className="cursor-pointer outline-none transition-colors hover:bg-muted/25 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
                   <td className="px-5 py-4"><div className="flex items-center gap-3"><div className={cn("grid size-9 place-items-center rounded-lg", transaction.direction === "credit" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{transaction.direction === "credit" ? <ArrowDownLeft className="size-4"/> : <ArrowUpRight className="size-4"/>}</div><div><p className="font-semibold">{transaction.merchant}</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">{transaction.reference}</p></div></div></td>
                   <td className="px-5 py-4"><p className="font-medium">{transaction.customerName}</p><p className="mt-0.5 text-xs text-muted-foreground">{transaction.category}</p></td>
                   <td className="px-5 py-4 text-muted-foreground">{new Date(transaction.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</td>
@@ -59,14 +68,14 @@ export default function TransactionMonitor() {
               ))}</tbody>
             </table>
           </div>
-        )}
+        </>)}
       </section>
     </div>
   );
 }
 
 function Summary({ label, value, attention = false }: { label: string; value: string; attention?: boolean }) {
-  return <article className={cn("rounded-2xl bg-muted/55 p-5", attention && "bg-amber-500/10")}><p className="text-sm text-muted-foreground">{label}</p><p className={cn("mt-4 font-mono text-2xl font-semibold tracking-[-0.03em] tabular-nums", attention && "text-amber-700 dark:text-amber-400")}>{value}</p></article>;
+  return <article className={cn("min-w-0 rounded-2xl bg-muted/55 p-4 sm:p-5", attention && "bg-amber-500/10")}><p className="text-xs leading-relaxed text-muted-foreground sm:text-sm">{label}</p><p className={cn("mt-3 truncate font-mono text-xl font-semibold tracking-[-0.03em] tabular-nums sm:mt-4 sm:text-2xl", attention && "text-amber-700 dark:text-amber-400")}>{value}</p></article>;
 }
 
 function LedgerSkeleton() {

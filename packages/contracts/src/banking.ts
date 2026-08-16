@@ -27,6 +27,13 @@ export const bankTransactionSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const transactionDetailsSchema = bankTransactionSchema.omit({ accountId: true }).extend({
+  accountName: z.string(),
+  accountType: z.enum(["checking", "savings"]),
+  accountMaskedNumber: z.string(),
+  transferKind: z.enum(["standard", "between_accounts", "account_number"]),
+});
+
 export const bankCardSchema = z.object({
   id: z.string(),
   accountId: z.string(),
@@ -37,6 +44,26 @@ export const bankCardSchema = z.object({
   status: z.enum(["active", "frozen"]),
   spendingLimit: z.number().positive(),
   expires: z.string(),
+  hasSecureDetails: z.boolean(),
+  issuedAt: z.string().datetime(),
+});
+
+export const cardDetailsSchema = z.object({
+  cardId: z.string(),
+  number: z.string().regex(/^4\d{15}$/),
+  securityCode: z.string().regex(/^\d{3}$/),
+  expires: z.string().regex(/^(0[1-9]|1[0-2])\/\d{2}$/),
+  revealExpiresAt: z.string().datetime(),
+});
+
+export const notificationSchema = z.object({
+  id: z.string(),
+  type: z.literal("card_issued"),
+  title: z.string(),
+  message: z.string(),
+  resourceId: z.string().nullable(),
+  isRead: z.boolean(),
+  createdAt: z.string().datetime(),
 });
 
 export const beneficiarySchema = z.object({
@@ -114,7 +141,10 @@ export const updateCardSchema = z.object({
 
 export type Account = z.infer<typeof accountSchema>;
 export type BankTransaction = z.infer<typeof bankTransactionSchema>;
+export type TransactionDetails = z.infer<typeof transactionDetailsSchema>;
 export type BankCard = z.infer<typeof bankCardSchema>;
+export type CardDetails = z.infer<typeof cardDetailsSchema>;
+export type AppNotification = z.infer<typeof notificationSchema>;
 export type Beneficiary = z.infer<typeof beneficiarySchema>;
 export type CreateTransfer = z.infer<typeof createTransferSchema>;
 export type CreateInternalTransfer = z.infer<typeof createInternalTransferSchema>;

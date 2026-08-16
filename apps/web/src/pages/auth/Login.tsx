@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { useToast } from '@/components/ui/use-toast';
+import { logger } from '@/lib/logger';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required'),
@@ -40,7 +41,7 @@ export default function LoginPage() {
       });
       navigate('/dashboard', { replace: true });
     } catch (error: any) {
-      console.error('Login error:', error);
+      logger.error('Login failed', error);
       toast({
         title: 'Sign in failed',
         description: error.message || 'Invalid email or password. Please try again.',

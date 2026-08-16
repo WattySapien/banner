@@ -1,4 +1,6 @@
-import { index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { customType, index, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -26,6 +28,14 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [index("sessions_user_idx").on(table.userId), index("sessions_expiry_idx").on(table.expiresAt)]);
+
+export const userAvatars = pgTable("user_avatars", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  contentType: text("content_type").notNull(),
+  imageData: bytea("image_data").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
 
 export const accounts = pgTable("accounts", {
   id: text("id").primaryKey(),
@@ -90,7 +100,23 @@ export const cards = pgTable("cards", {
   status: text("status", { enum: ["active", "frozen"] }).notNull(),
   spendingLimitCents: integer("spending_limit_cents").notNull(),
   expires: text("expires").notNull(),
+  panCiphertext: text("pan_ciphertext"),
+  panIv: text("pan_iv"),
+  panAuthTag: text("pan_auth_tag"),
+  panFingerprint: text("pan_fingerprint"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 });
+
+export const notifications = pgTable("notifications", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type", { enum: ["card_issued"] }).notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  resourceId: text("resource_id"),
+  isRead: integer("is_read").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [index("notifications_user_created_idx").on(table.userId, table.createdAt)]);
 
 export const beneficiaries = pgTable("beneficiaries", {
   id: text("id").primaryKey(),

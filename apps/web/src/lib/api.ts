@@ -21,3 +21,30 @@ export async function apiRequest(
   if (response.status === 204) return null;
   return response.json();
 }
+
+async function uploadAvatarTo(endpoint: string, file: File) {
+  const response = await fetch(endpoint, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: response.statusText }));
+    throw Object.assign(new Error(error.message ?? "Profile image upload failed"), {
+      status: response.status,
+      details: error,
+    });
+  }
+
+  return response.json();
+}
+
+export function uploadAvatar(file: File) {
+  return uploadAvatarTo("/api/settings/avatar", file);
+}
+
+export function uploadAdminAvatar(userId: string, file: File) {
+  return uploadAvatarTo(`/api/admin/users/${encodeURIComponent(userId)}/avatar`, file);
+}

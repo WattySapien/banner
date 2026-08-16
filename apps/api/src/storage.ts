@@ -2,25 +2,34 @@ import { randomBytes, randomInt, randomUUID, scrypt as nodeScrypt, timingSafeEqu
 import { promisify } from "node:util";
 import { getDatabase, withDatabaseDeadline } from "@clipx/database";
 import type { User } from "@clipx/contracts/schema";
-import type { Account, BankCard, BankingOverview, BankTransaction, Beneficiary, CreateInternalTransfer, CreatePeerTransfer, CreateTransfer, InternalTransferReceipt, PeerRecipient, PeerTransferReceipt, UpdateCard } from "@clipx/contracts/banking";
-import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, CreateAdminAccount, CreateAdminCustomer, UpdateAdminAccount, UpdateAdminUser } from "@clipx/contracts/admin";
+import type { Account, AppNotification, BankCard, BankingOverview, BankTransaction, Beneficiary, CardDetails, CreateInternalTransfer, CreatePeerTransfer, CreateTransfer, InternalTransferReceipt, PeerRecipient, PeerTransferReceipt, TransactionDetails, UpdateCard } from "@clipx/contracts/banking";
+import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, AdminTransactionDetails, CreateAdminAccount, CreateAdminCard, CreateAdminCustomer, UpdateAdminAccount, UpdateAdminUser } from "@clipx/contracts/admin";
 import type { AccountSettings, ChangePassword, UpdatePreferences, UpdateProfile } from "@clipx/contracts/settings";
 import type { LocalAuthUser } from "@clipx/contracts/auth";
 import { atStage } from "./diagnostics.js";
+import { config } from "./config.js";
+import { decryptPan,encryptPan,fingerprintPan,generateExpiry,generateSecurityCode,generateVisaPan } from "./card-security.js";
 
 const scrypt = promisify(nodeScrypt);
 const cents = (value: number) => Math.round(value * 100);
 const dollars = (value: number | string) => Number(value) / 100;
 const iso = (value: string | Date) => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+const accountHolderName = (firstName:string,lastName:string) => `${firstName.trim()} ${lastName.trim()}`.trim();
 
 type UserRow = { id:string; email:string; first_name:string; last_name:string; profile_image_url:string|null; is_admin:number; is_active:number; created_at:string|Date; updated_at:string|Date; last_active_at:string|Date };
 type AccountRow = { id:string; name:string; type:"checking"|"savings"; account_number:string|null; masked_number:string; currency:"USD"; balance_cents:number; available_balance_cents:number; interest_rate_bps:number|null };
-type TransactionRow = { id:string; account_id:string; description:string; merchant:string; category:BankTransaction["category"]; amount_cents:number; direction:BankTransaction["direction"]; status:BankTransaction["status"]; reference:string; created_at:string|Date };
+type TransactionRow = { id:string; account_id:string; internal_transfer_id?:string|null; peer_transfer_id?:string|null; description:string; merchant:string; category:BankTransaction["category"]; amount_cents:number; direction:BankTransaction["direction"]; status:BankTransaction["status"]; reference:string; created_at:string|Date };
+type TransactionDetailsRow = TransactionRow & { account_name:string; account_type:Account["type"]; account_masked_number:string };
 type InternalTransferRow = { id:string; user_id:string; source_account_id:string; destination_account_id:string; amount_cents:number; note:string; reference:string; status:"completed"; created_at:string|Date };
 type PeerTransferRow = { id:string; sender_user_id:string; source_account_id:string; recipient_user_id:string; destination_account_id:string; amount_cents:number; note:string; reference:string; status:"completed"; created_at:string|Date };
 type PeerRecipientRow = AccountRow & { user_id:string; first_name:string; last_name:string };
-type CardRow = { id:string; account_id:string; holder_name:string; last_four:string; network:"Visa"; type:BankCard["type"]; status:BankCard["status"]; spending_limit_cents:number; expires:string };
+type CardRow = { id:string; account_id:string; holder_name:string; last_four:string; network:"Visa"; type:BankCard["type"]; status:BankCard["status"]; spending_limit_cents:number; expires:string; pan_ciphertext:string|null; pan_iv:string|null; pan_auth_tag:string|null; pan_fingerprint:string|null; created_at:string|Date };
 type BeneficiaryRow = { id:string; name:string; bank_name:string; masked_account:string; initials:string };
+type NotificationRow={id:string;type:"card_issued";title:string;message:string;resource_id:string|null;is_read:number;created_at:string|Date};
+type AvatarRow={content_type:"image/jpeg"|"image/png"|"image/webp";image_data:Buffer;updated_at:string|Date};
+
+export type AvatarUpload={contentType:AvatarRow["content_type"];data:Buffer};
+export type AvatarFile=AvatarUpload&{updatedAt:string};
 
 const toUser = (row: UserRow): User => ({
   id: row.id,
@@ -38,7 +47,10 @@ const toAccount = (row: AccountRow): Account => ({ id:row.id, name:row.name, typ
 const generateAccountNumber = () => randomInt(1_000_000_000, 10_000_000_000).toString();
 const errorCode = (error:unknown) => error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
 const toTransaction = (row: TransactionRow): BankTransaction => ({ id:row.id, accountId:row.account_id, description:row.description, merchant:row.merchant, category:row.category, amount:dollars(row.amount_cents), direction:row.direction, status:row.status, reference:row.reference, createdAt:iso(row.created_at) });
-const toCard = (row: CardRow): BankCard => ({ id:row.id, accountId:row.account_id, holderName:row.holder_name, lastFour:row.last_four, network:row.network, type:row.type, status:row.status, spendingLimit:dollars(row.spending_limit_cents), expires:row.expires });
+const toTransactionDetails = (row:TransactionDetailsRow):TransactionDetails => ({ id:row.id, description:row.description, merchant:row.merchant, category:row.category, amount:dollars(row.amount_cents), direction:row.direction, status:row.status, reference:row.reference, createdAt:iso(row.created_at), accountName:row.account_name, accountType:row.account_type, accountMaskedNumber:row.account_masked_number, transferKind:row.peer_transfer_id?"account_number":row.internal_transfer_id?"between_accounts":"standard" });
+const toCard = (row: CardRow): BankCard => ({ id:row.id, accountId:row.account_id, holderName:row.holder_name, lastFour:row.last_four, network:row.network, type:row.type, status:row.status, spendingLimit:dollars(row.spending_limit_cents), expires:row.expires, hasSecureDetails:Boolean(row.pan_ciphertext&&row.pan_iv&&row.pan_auth_tag), issuedAt:iso(row.created_at) });
+const toNotification=(row:NotificationRow):AppNotification=>({id:row.id,type:row.type,title:row.title,message:row.message,resourceId:row.resource_id,isRead:Boolean(row.is_read),createdAt:iso(row.created_at)});
+const requireCardDataKey=()=>{if(!config.cardDataEncryptionKey)throw Object.assign(new Error("Card security is not configured"),{status:503});return config.cardDataEncryptionKey;};
 
 async function createPasswordHash(password: string, salt = randomBytes(16).toString("hex")) {
   const derived = await scrypt(password, salt, 64) as Buffer;
@@ -57,7 +69,9 @@ export interface IStorage {
   readonly kind: "postgres"|"sqlite";
   ping(): Promise<void>;
   getUser(id:string): Promise<User|undefined>;
-  createLocalUser(email:string,password:string): Promise<LocalAuthUser>;
+  getUserAvatar(userId:string): Promise<AvatarFile|undefined>;
+  updateUserAvatar(userId:string,avatar:AvatarUpload): Promise<User>;
+  createLocalUser(email:string,password:string,firstName:string,lastName:string): Promise<LocalAuthUser>;
   authenticateLocalUser(email:string,password:string): Promise<LocalAuthUser|undefined>;
   createSession(userId:string,tokenHash:string,expiresAt:Date): Promise<void>;
   getSessionUser(tokenHash:string): Promise<LocalAuthUser|undefined>;
@@ -66,7 +80,12 @@ export interface IStorage {
   getOverview(userId:string): Promise<BankingOverview>;
   getAccounts(userId:string): Promise<Account[]>;
   getTransactions(userId:string): Promise<BankTransaction[]>;
+  getTransaction(userId:string,transactionId:string): Promise<TransactionDetails>;
   getCards(userId:string): Promise<BankCard[]>;
+  getCardDetails(userId:string,cardId:string): Promise<CardDetails>;
+  getNotifications(userId:string): Promise<AppNotification[]>;
+  markNotificationRead(userId:string,notificationId:string): Promise<AppNotification>;
+  markAllNotificationsRead(userId:string): Promise<void>;
   getBeneficiaries(userId:string): Promise<Beneficiary[]>;
   createTransfer(userId:string,transfer:CreateTransfer): Promise<BankTransaction>;
   createInternalTransfer(userId:string,transfer:CreateInternalTransfer): Promise<InternalTransferReceipt>;
@@ -85,7 +104,9 @@ export interface IStorage {
   createAdminAccount(userId:string,input:CreateAdminAccount): Promise<Account>;
   updateAdminAccount(userId:string,accountId:string,update:UpdateAdminAccount): Promise<Account>;
   assignAdminAccountNumber(userId:string,accountId:string): Promise<Account>;
+  createAdminCard(userId:string,input:CreateAdminCard): Promise<BankCard>;
   getAdminTransactions(): Promise<AdminTransaction[]>;
+  getAdminTransaction(transactionId:string): Promise<AdminTransactionDetails>;
 }
 
 export class PostgresStorage implements IStorage {
@@ -104,21 +125,39 @@ export class PostgresStorage implements IStorage {
     return row ? toUser(row) : undefined;
   }
 
-  async createLocalUser(email:string,password:string) {
+  async getUserAvatar(userId:string):Promise<AvatarFile|undefined>{
+    const sql=getDatabase();
+    const [row]=await sql<AvatarRow[]>`SELECT content_type,image_data,updated_at FROM user_avatars WHERE user_id=${userId}`;
+    return row?{contentType:row.content_type,data:Buffer.from(row.image_data),updatedAt:iso(row.updated_at)}:undefined;
+  }
+
+  async updateUserAvatar(userId:string,avatar:AvatarUpload):Promise<User>{
+    const sql=getDatabase();
+    const version=Date.now();
+    const user=await atDatabaseStage("avatar.database.save",()=>sql.begin(async(tx)=>{
+      const [updated]=await tx<UserRow[]>`UPDATE users SET profile_image_url=${`/api/avatars/${userId}?v=${version}`},updated_at=now() WHERE id=${userId} RETURNING *`;
+      if(!updated)throw Object.assign(new Error("Account not found"),{status:404});
+      await tx`INSERT INTO user_avatars (user_id,content_type,image_data,byte_size,updated_at) VALUES (${userId},${avatar.contentType},${avatar.data},${avatar.data.byteLength},now()) ON CONFLICT (user_id) DO UPDATE SET content_type=excluded.content_type,image_data=excluded.image_data,byte_size=excluded.byte_size,updated_at=now()`;
+      return updated;
+    }));
+    return toUser(user);
+  }
+
+  async createLocalUser(email:string,password:string,firstName:string,lastName:string) {
     const sql = getDatabase();
     const normalized = email.toLowerCase();
     const [duplicate] = await atDatabaseStage("signup.database.check_duplicate",()=>sql`SELECT 1 FROM users WHERE lower(email)=lower(${normalized})`);
     if (duplicate) throw Object.assign(new Error("An account with this email already exists"), { status:409 });
     const id = randomUUID();
-    const localPart = normalized.split("@")[0] || "Account";
-    const firstName = localPart.split(/[._-]/).filter(Boolean).map((part) => `${part[0]?.toUpperCase()}${part.slice(1)}`).join(" ") || "Account";
+    const normalizedFirstName=firstName.trim();
+    const normalizedLastName=lastName.trim();
     const credential = await atStage("signup.password.hash",()=>createPasswordHash(password));
     await atDatabaseStage("signup.database.create_user",()=>sql.begin(async (tx) => {
-      await tx`INSERT INTO users (id,email,first_name,last_name) VALUES (${id},${normalized},${firstName},'')`;
+      await tx`INSERT INTO users (id,email,first_name,last_name) VALUES (${id},${normalized},${normalizedFirstName},${normalizedLastName})`;
       await tx`INSERT INTO user_preferences (user_id) VALUES (${id})`;
       await tx`INSERT INTO local_credentials (user_id,password_hash,password_salt) VALUES (${id},${credential.hash},${credential.salt})`;
     }));
-    return { id, email:normalized, firstName, lastName:"", isAdmin:false };
+    return { id, email:normalized, firstName:normalizedFirstName, lastName:normalizedLastName, isAdmin:false };
   }
 
   async authenticateLocalUser(email:string,password:string) {
@@ -170,10 +209,49 @@ export class PostgresStorage implements IStorage {
     return rows.map(toTransaction);
   }
 
+  async getTransaction(userId:string,transactionId:string) {
+    const sql=getDatabase();
+    const [row]=await atDatabaseStage("transaction.details.database.read",()=>sql<TransactionDetailsRow[]>`
+      SELECT t.*,a.name account_name,a.type account_type,a.masked_number account_masked_number
+      FROM transactions t JOIN accounts a ON a.id=t.account_id
+      WHERE t.id=${transactionId} AND a.user_id=${userId}`);
+    if(!row)throw Object.assign(new Error("Transaction not found"),{status:404});
+    return toTransactionDetails(row);
+  }
+
   async getCards(userId:string) {
     const sql = getDatabase();
     const rows = await sql<CardRow[]>`SELECT c.* FROM cards c JOIN accounts a ON a.id=c.account_id WHERE a.user_id=${userId} ORDER BY c.type`;
     return rows.map(toCard);
+  }
+
+  async getCardDetails(userId:string,cardId:string):Promise<CardDetails>{
+    const sql=getDatabase();
+    const [row]=await atDatabaseStage("card.details.database.read",()=>sql<CardRow[]>`
+      SELECT c.* FROM cards c JOIN accounts a ON a.id=c.account_id
+      WHERE c.id=${cardId} AND a.user_id=${userId}`);
+    if(!row)throw Object.assign(new Error("Card not found"),{status:404});
+    if(!row.pan_ciphertext||!row.pan_iv||!row.pan_auth_tag)throw Object.assign(new Error("Secure details are unavailable for this legacy card"),{status:409});
+    const number=decryptPan({ciphertext:row.pan_ciphertext,iv:row.pan_iv,authTag:row.pan_auth_tag},requireCardDataKey());
+    return{cardId:row.id,number,securityCode:generateSecurityCode(),expires:row.expires,revealExpiresAt:new Date(Date.now()+30_000).toISOString()};
+  }
+
+  async getNotifications(userId:string){
+    const sql=getDatabase();
+    const rows=await sql<NotificationRow[]>`SELECT id,type,title,message,resource_id,is_read,created_at FROM notifications WHERE user_id=${userId} ORDER BY created_at DESC LIMIT 20`;
+    return rows.map(toNotification);
+  }
+
+  async markNotificationRead(userId:string,notificationId:string){
+    const sql=getDatabase();
+    const [row]=await sql<NotificationRow[]>`UPDATE notifications SET is_read=1 WHERE id=${notificationId} AND user_id=${userId} RETURNING id,type,title,message,resource_id,is_read,created_at`;
+    if(!row)throw Object.assign(new Error("Notification not found"),{status:404});
+    return toNotification(row);
+  }
+
+  async markAllNotificationsRead(userId:string){
+    const sql=getDatabase();
+    await sql`UPDATE notifications SET is_read=1 WHERE user_id=${userId} AND is_read=0`;
   }
 
   async getBeneficiaries(userId:string) {
@@ -211,13 +289,6 @@ export class PostgresStorage implements IStorage {
     const sql=getDatabase();
     return atDatabaseStage("internal_transfer.database.create",()=>sql.begin(async(tx)=>{
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`app-transfer:${userId}`}))`;
-      const [usage]=await tx<Array<{count:number}>>`
-        SELECT (
-          (SELECT count(*) FROM internal_transfers WHERE user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
-          +(SELECT count(*) FROM peer_transfers WHERE sender_user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
-        )::int count`;
-      if(Number(usage.count)>=10)throw Object.assign(new Error("You have reached the limit of 10 transfers between your accounts per hour"),{status:429});
-
       const accounts=await tx<AccountRow[]>`
         SELECT id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps
         FROM accounts
@@ -262,13 +333,6 @@ export class PostgresStorage implements IStorage {
     const sql=getDatabase();
     return atDatabaseStage("peer_transfer.database.create",()=>sql.begin(async(tx)=>{
       await tx`SELECT pg_advisory_xact_lock(hashtext(${`app-transfer:${userId}`}))`;
-      const [usage]=await tx<Array<{count:number}>>`
-        SELECT (
-          (SELECT count(*) FROM internal_transfers WHERE user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
-          +(SELECT count(*) FROM peer_transfers WHERE sender_user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
-        )::int count`;
-      if(Number(usage.count)>=10)throw Object.assign(new Error("You have reached the limit of 10 in-app transfers per hour"),{status:429});
-
       const [resolvedRecipient]=await tx<PeerRecipientRow[]>`
         SELECT a.id,a.user_id,a.name,a.type,a.account_number,a.masked_number,a.currency,a.balance_cents,a.available_balance_cents,a.interest_rate_bps,u.first_name,u.last_name
         FROM accounts a JOIN users u ON u.id=a.user_id
@@ -317,16 +381,20 @@ export class PostgresStorage implements IStorage {
 
   async getSettings(userId:string): Promise<AccountSettings> {
     const sql=getDatabase();
-    const [row]=await sql<Array<{email:string;first_name:string;last_name:string;transaction_alerts:number;monthly_summary:number;show_balances:number}>>`SELECT u.email,u.first_name,u.last_name,p.transaction_alerts,p.monthly_summary,p.show_balances FROM users u JOIN user_preferences p ON p.user_id=u.id WHERE u.id=${userId}`;
+    const [row]=await sql<Array<{email:string;first_name:string;last_name:string;profile_image_url:string|null;transaction_alerts:number;monthly_summary:number;show_balances:number}>>`SELECT u.email,u.first_name,u.last_name,u.profile_image_url,p.transaction_alerts,p.monthly_summary,p.show_balances FROM users u JOIN user_preferences p ON p.user_id=u.id WHERE u.id=${userId}`;
     if(!row) throw Object.assign(new Error("Account settings not found"),{status:404});
-    return {profile:{firstName:row.first_name,lastName:row.last_name,email:row.email},preferences:{transactionAlerts:Boolean(row.transaction_alerts),monthlySummary:Boolean(row.monthly_summary),showBalances:Boolean(row.show_balances)}};
+    return {profile:{firstName:row.first_name,lastName:row.last_name,email:row.email,profileImageUrl:row.profile_image_url},preferences:{transactionAlerts:Boolean(row.transaction_alerts),monthlySummary:Boolean(row.monthly_summary),showBalances:Boolean(row.show_balances)}};
   }
 
   async updateProfile(userId:string,update:UpdateProfile) {
     const sql=getDatabase();
-    const rows=await sql`UPDATE users SET first_name=${update.firstName},last_name=${update.lastName},updated_at=now() WHERE id=${userId} RETURNING id`;
-    if(!rows.length) throw Object.assign(new Error("Account not found"),{status:404});
-    await sql`UPDATE cards SET holder_name=${`${update.firstName} ${update.lastName}`.toUpperCase()} WHERE account_id IN (SELECT id FROM accounts WHERE user_id=${userId})`;
+    const holderName=accountHolderName(update.firstName,update.lastName);
+    await sql.begin(async(tx)=>{
+      const rows=await tx`UPDATE users SET first_name=${update.firstName},last_name=${update.lastName},updated_at=now() WHERE id=${userId} RETURNING id`;
+      if(!rows.length) throw Object.assign(new Error("Account not found"),{status:404});
+      await tx`UPDATE accounts SET name=${holderName} WHERE user_id=${userId}`;
+      await tx`UPDATE cards SET holder_name=${holderName.toUpperCase()} WHERE account_id IN (SELECT id FROM accounts WHERE user_id=${userId})`;
+    });
     return this.getSettings(userId);
   }
 
@@ -361,7 +429,7 @@ export class PostgresStorage implements IStorage {
   async getAdminUsers() {
     const sql=getDatabase();
     const rows=await atDatabaseStage("admin.users.database.read",()=>sql<Array<UserRow & {balance_cents:number}>>`SELECT u.*,coalesce(sum(a.balance_cents),0)::bigint balance_cents FROM users u LEFT JOIN accounts a ON a.user_id=u.id GROUP BY u.id ORDER BY u.last_active_at DESC`);
-    return rows.map((row)=>({id:row.id,email:row.email,firstName:row.first_name,lastName:row.last_name,initials:`${row.first_name[0]??""}${row.last_name[0]??""}`||"CX",isAdmin:Boolean(row.is_admin),isActive:Boolean(row.is_active),balance:dollars(row.balance_cents),createdAt:iso(row.created_at),lastActiveAt:iso(row.last_active_at)}));
+    return rows.map((row)=>({id:row.id,email:row.email,firstName:row.first_name,lastName:row.last_name,initials:`${row.first_name[0]??""}${row.last_name[0]??""}`||"CX",profileImageUrl:row.profile_image_url,isAdmin:Boolean(row.is_admin),isActive:Boolean(row.is_active),balance:dollars(row.balance_cents),createdAt:iso(row.created_at),lastActiveAt:iso(row.last_active_at)}));
   }
 
   async createAdminUser(input:CreateAdminCustomer) {
@@ -375,10 +443,10 @@ export class PostgresStorage implements IStorage {
       const [created]=await tx<UserRow[]>`INSERT INTO users (id,email,first_name,last_name,is_admin,is_active) VALUES (${userId},${input.email.toLowerCase()},${input.firstName},${input.lastName},${Number(input.isAdmin)},${Number(input.isActive)}) RETURNING *`;
       await tx`INSERT INTO user_preferences (user_id) VALUES (${userId})`;
       await tx`INSERT INTO local_credentials (user_id,password_hash,password_salt) VALUES (${userId},${credential.hash},${credential.salt})`;
-      if(input.account)await tx`INSERT INTO accounts (id,user_id,name,type,masked_number,balance_cents,available_balance_cents) VALUES (${randomUUID()},${userId},${input.account.name},${input.account.type},${input.account.maskedNumber},${balance},${balance})`;
+      if(input.account)await tx`INSERT INTO accounts (id,user_id,name,type,masked_number,balance_cents,available_balance_cents) VALUES (${randomUUID()},${userId},${accountHolderName(input.firstName,input.lastName)},${input.account.type},${input.account.maskedNumber},${balance},${balance})`;
       return created;
     }));
-    return {id:user.id,email:user.email,firstName:user.first_name,lastName:user.last_name,initials:`${user.first_name[0]??""}${user.last_name[0]??""}`||"CX",isAdmin:Boolean(user.is_admin),isActive:Boolean(user.is_active),balance:dollars(balance),createdAt:iso(user.created_at),lastActiveAt:iso(user.last_active_at)};
+    return {id:user.id,email:user.email,firstName:user.first_name,lastName:user.last_name,initials:`${user.first_name[0]??""}${user.last_name[0]??""}`||"CX",profileImageUrl:user.profile_image_url,isAdmin:Boolean(user.is_admin),isActive:Boolean(user.is_active),balance:dollars(balance),createdAt:iso(user.created_at),lastActiveAt:iso(user.last_active_at)};
   }
 
   async getAdminUserDetails(userId:string): Promise<AdminCustomerDetails> {
@@ -398,8 +466,13 @@ export class PostgresStorage implements IStorage {
     if(duplicate) throw Object.assign(new Error("Another account already uses this email"),{status:409});
     const wasActive=Boolean(row.is_active);
     const isActive=update.isActive??wasActive;
+    const firstName=update.firstName??row.first_name;
+    const lastName=update.lastName??row.last_name;
+    const holderName=accountHolderName(firstName,lastName);
     await atDatabaseStage("admin.customer.database.update",()=>sql.begin(async(tx)=>{
-      await tx`UPDATE users SET email=${email},first_name=${update.firstName??row.first_name},last_name=${update.lastName??row.last_name},is_admin=${Number(update.isAdmin??Boolean(row.is_admin))},is_active=${Number(isActive)},updated_at=now() WHERE id=${userId}`;
+      await tx`UPDATE users SET email=${email},first_name=${firstName},last_name=${lastName},is_admin=${Number(update.isAdmin??Boolean(row.is_admin))},is_active=${Number(isActive)},updated_at=now() WHERE id=${userId}`;
+      await tx`UPDATE accounts SET name=${holderName} WHERE user_id=${userId}`;
+      await tx`UPDATE cards SET holder_name=${holderName.toUpperCase()} WHERE account_id IN (SELECT id FROM accounts WHERE user_id=${userId})`;
       if(!wasActive||!isActive)await tx`DELETE FROM sessions WHERE user_id=${userId}`;
     }));
     const customer=(await this.getAdminUsers()).find((item)=>item.id===userId);
@@ -412,7 +485,7 @@ export class PostgresStorage implements IStorage {
     const balance=cents(input.openingBalance);
     const [row]=await atDatabaseStage("admin.account.database.create",()=>sql<AccountRow[]>`
       INSERT INTO accounts (id,user_id,name,type,masked_number,balance_cents,available_balance_cents)
-      SELECT ${randomUUID()},id,${input.name},${input.type},${input.maskedNumber},${balance},${balance}
+      SELECT ${randomUUID()},id,trim(first_name||' '||last_name),${input.type},${input.maskedNumber},${balance},${balance}
       FROM users WHERE id=${userId}
       RETURNING id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps`);
     if(!row)throw Object.assign(new Error("Customer not found"),{status:404});
@@ -427,7 +500,7 @@ export class PostgresStorage implements IStorage {
     if(!current)throw Object.assign(new Error("Customer account not found"),{status:404});
     if(current.account_number&&update.maskedNumber!==undefined&&update.maskedNumber!==current.masked_number)throw Object.assign(new Error("The final four digits are locked after an account number is assigned"),{status:409});
     const [row]=await atDatabaseStage("admin.account.database.update",()=>sql<AccountRow[]>`
-      UPDATE accounts SET name=${update.name??current.name},type=${update.type??current.type},masked_number=${update.maskedNumber??current.masked_number}
+      UPDATE accounts SET type=${update.type??current.type},masked_number=${update.maskedNumber??current.masked_number}
       WHERE id=${accountId} AND user_id=${userId}
       RETURNING id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps`);
     if(!row)throw Object.assign(new Error("Customer account not found"),{status:404});
@@ -456,10 +529,38 @@ export class PostgresStorage implements IStorage {
     throw Object.assign(new Error("A unique account number could not be allocated. Try again."),{status:503});
   }
 
+  async createAdminCard(userId:string,input:CreateAdminCard){
+    const sql=getDatabase();
+    return atDatabaseStage("admin.card.database.create",()=>sql.begin(async(tx)=>{
+      const [owner]=await tx<Array<{account_id:string;holder_name:string}>>`
+        SELECT a.id account_id,upper(trim(u.first_name||' '||u.last_name)) holder_name
+        FROM accounts a JOIN users u ON u.id=a.user_id
+        WHERE a.id=${input.accountId} AND a.user_id=${userId}`;
+      if(!owner)throw Object.assign(new Error("Customer account not found"),{status:404});
+      const key=requireCardDataKey(),id=randomUUID(),pan=generateVisaPan(),expires=generateExpiry(),encrypted=encryptPan(pan,key);
+      const [row]=await tx<CardRow[]>`
+        INSERT INTO cards (id,account_id,holder_name,last_four,network,type,status,spending_limit_cents,expires,pan_ciphertext,pan_iv,pan_auth_tag,pan_fingerprint)
+        VALUES (${id},${owner.account_id},${owner.holder_name},${pan.slice(-4)},'Visa',${input.type},${input.status},${cents(input.spendingLimit)},${expires},${encrypted.ciphertext},${encrypted.iv},${encrypted.authTag},${fingerprintPan(pan,key)})
+        RETURNING *`;
+      await tx`INSERT INTO notifications (id,user_id,type,title,message,resource_id) VALUES (${randomUUID()},${userId},'card_issued','Your new card is ready',${`${input.type[0]?.toUpperCase()}${input.type.slice(1)} Visa ending in ${pan.slice(-4)} was added to your account.`},${id})`;
+      return toCard(row);
+    }));
+  }
+
   async getAdminTransactions() {
     const sql=getDatabase();
     const rows=await atDatabaseStage("admin.transactions.database.read",()=>sql<Array<TransactionRow & {customer_id:string;customer_name:string}>>`SELECT t.*,u.id customer_id,trim(u.first_name||' '||u.last_name) customer_name FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN users u ON u.id=a.user_id ORDER BY t.created_at DESC`);
     return rows.map((row)=>({...toTransaction(row),customerId:row.customer_id,customerName:row.customer_name,risk:Number(row.amount_cents)>=cents(2500)||row.status==="failed"?"review" as const:"standard" as const}));
+  }
+
+  async getAdminTransaction(transactionId:string) {
+    const sql=getDatabase();
+    const [row]=await atDatabaseStage("admin.transaction.details.database.read",()=>sql<Array<TransactionDetailsRow&{customer_name:string}>>`
+      SELECT t.*,a.name account_name,a.type account_type,a.masked_number account_masked_number,trim(u.first_name||' '||u.last_name) customer_name
+      FROM transactions t JOIN accounts a ON a.id=t.account_id JOIN users u ON u.id=a.user_id
+      WHERE t.id=${transactionId}`);
+    if(!row)throw Object.assign(new Error("Transaction not found"),{status:404});
+    return {...toTransactionDetails(row),customerName:row.customer_name,risk:Number(row.amount_cents)>=cents(2500)||row.status==="failed"?"review" as const:"standard" as const};
   }
 }
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Landmark, UserPlus } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Landmark, UserPlus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { AdminCustomer, CreateAdminCustomer } from "@clipx/contracts/admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,6 @@ export default function CreateCustomer() {
   const [isActive, setIsActive] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [createAccount, setCreateAccount] = useState(true);
-  const [accountName, setAccountName] = useState("Everyday checking");
   const [accountType, setAccountType] = useState<"checking" | "savings">("checking");
   const [maskedNumber, setMaskedNumber] = useState("");
   const [openingBalance, setOpeningBalance] = useState("0.00");
@@ -48,18 +47,17 @@ export default function CreateCustomer() {
       password,
       isActive,
       isAdmin,
-      ...(createAccount ? { account: { name: accountName, type: accountType, maskedNumber, openingBalance: Number(openingBalance) } } : {}),
+      ...(createAccount ? { account: { type: accountType, maskedNumber, openingBalance: Number(openingBalance) } } : {}),
     });
   };
 
-  const accountIsValid = !createAccount || (accountName.trim().length > 0 && /^\d{4}$/.test(maskedNumber) && Number.isFinite(Number(openingBalance)) && Number(openingBalance) >= 0);
+  const accountIsValid = !createAccount || (/^\d{4}$/.test(maskedNumber) && Number.isFinite(Number(openingBalance)) && Number(openingBalance) >= 0);
   const passwordIsValid = password.length >= 8 && password === confirmPassword;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <header>
-        <Link to="/admin/users" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="size-4"/>Back to customers</Link>
-        <p className="mt-6 text-sm text-muted-foreground">Customer onboarding</p>
+        <p className="text-sm text-muted-foreground">Customer onboarding</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Add a customer</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">Create the user record and, when needed, open their first bank account in the same database transaction.</p>
       </header>
@@ -82,8 +80,8 @@ export default function CreateCustomer() {
           <section className="rounded-2xl border bg-card p-5 sm:p-7">
             <div className="flex items-start gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><Landmark className="size-5"/></div><div className="flex-1"><h2 className="font-semibold">Opening account</h2><p className="mt-1 text-sm text-muted-foreground">Optionally create the first balance for this customer.</p></div><Switch checked={createAccount} onCheckedChange={setCreateAccount} aria-label="Create an opening account"/></div>
             {createAccount && <div className="mt-7 grid gap-5 sm:grid-cols-2">
-              <div className="sm:col-span-2"><Label htmlFor="newAccountName">Account name</Label><Input id="newAccountName" value={accountName} onChange={(event) => setAccountName(event.target.value)} className="mt-2" required /></div>
-              <div><Label htmlFor="newAccountType">Account type</Label><select id="newAccountType" value={accountType} onChange={(event) => setAccountType(event.target.value as "checking" | "savings")} className="mt-2 flex h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"><option value="checking">Checking</option><option value="savings">Savings</option></select></div>
+              <div className="sm:col-span-2 rounded-xl bg-muted/55 p-4"><p className="text-sm font-medium">Account holder</p><p className="mt-1 text-sm text-muted-foreground">{`${firstName} ${lastName}`.trim() || "Enter the customer name above"}</p><p className="mt-1 text-xs text-muted-foreground">The account name always matches the customer identity and cannot be edited separately.</p></div>
+              <div><Label htmlFor="newAccountType">Account type</Label><select id="newAccountType" value={accountType} onChange={(event) => setAccountType(event.target.value as "checking" | "savings")} className="mt-2 flex h-11 w-full rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:text-sm"><option value="checking">Checking</option><option value="savings">Savings</option></select></div>
               <div><Label htmlFor="newMaskedNumber">Final four digits</Label><Input id="newMaskedNumber" inputMode="numeric" maxLength={4} pattern="\d{4}" value={maskedNumber} onChange={(event) => setMaskedNumber(event.target.value.replace(/\D/g, "").slice(0, 4))} className="mt-2 font-mono" placeholder="0000" required /></div>
               <div className="sm:col-span-2"><Label htmlFor="newOpeningBalance">Opening balance</Label><div className="relative mt-2"><span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-muted-foreground">$</span><Input id="newOpeningBalance" inputMode="decimal" value={openingBalance} onChange={(event) => setOpeningBalance(event.target.value)} className="pl-8 font-mono" required /></div></div>
             </div>}
@@ -91,7 +89,7 @@ export default function CreateCustomer() {
         </div>
 
         <aside className="space-y-6">
-          <section className="sticky top-28 rounded-2xl bg-[#14251f] p-6 text-[#f4f7f5] sm:p-7"><p className="text-sm text-white/55">Review</p><h2 className="mt-2 text-xl font-semibold">Create customer record</h2><dl className="mt-7 space-y-4 border-t border-white/12 pt-5 text-sm"><ReviewRow label="Customer" value={`${firstName || "Not entered"} ${lastName}`.trim()}/><ReviewRow label="Email" value={email || "Not entered"}/><ReviewRow label="Password" value={passwordIsValid ? "Ready" : "Required"}/><ReviewRow label="Access" value={isActive ? "Active" : "Suspended"}/><ReviewRow label="Role" value={isAdmin ? "Administrator" : "Customer"}/><ReviewRow label="Opening account" value={createAccount ? accountName || "Not entered" : "None"}/></dl><Button type="submit" variant="secondary" className="mt-7 w-full" disabled={!firstName.trim() || !email.trim() || !passwordIsValid || !accountIsValid || create.isPending}>{create.isPending ? "Creating…" : "Create customer"}</Button><p className="mt-3 text-xs leading-relaxed text-white/45">The user, credential, preferences, and optional account are saved together.</p></section>
+          <section className="sticky top-28 rounded-2xl bg-[#211a3a] p-6 text-white shadow-[0_18px_48px_hsl(258_60%_32%/.16)] sm:p-7"><p className="text-sm text-white/55">Review</p><h2 className="mt-2 text-xl font-semibold">Create customer record</h2><dl className="mt-7 space-y-4 border-t border-white/12 pt-5 text-sm"><ReviewRow label="Customer" value={`${firstName || "Not entered"} ${lastName}`.trim()}/><ReviewRow label="Email" value={email || "Not entered"}/><ReviewRow label="Password" value={passwordIsValid ? "Ready" : "Required"}/><ReviewRow label="Access" value={isActive ? "Active" : "Suspended"}/><ReviewRow label="Role" value={isAdmin ? "Administrator" : "Customer"}/><ReviewRow label="Opening account" value={createAccount ? `${firstName || "Not entered"} ${lastName}`.trim() : "None"}/></dl><Button type="submit" variant="secondary" className="mt-7 w-full" disabled={!firstName.trim() || !email.trim() || !passwordIsValid || !accountIsValid || create.isPending}>{create.isPending ? "Creating…" : "Create customer"}</Button><p className="mt-3 text-xs leading-relaxed text-white/45">The user, credential, preferences, and optional account are saved together.</p></section>
         </aside>
       </form>
     </div>

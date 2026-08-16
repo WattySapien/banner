@@ -9,3 +9,8 @@ export const formatDate = (value: string) => new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   year: new Date(value).getFullYear() === new Date().getFullYear() ? undefined : "numeric",
 }).format(new Date(value));
+
+export const formatAccountNumber = (accountNumber?:string, maskedNumber?:string) => {
+  const finalFour=(accountNumber??maskedNumber??"").replace(/\D/g,"").slice(-4).padStart(4,"x");
+  return `xxxxxxxx${finalFour}`;
+};

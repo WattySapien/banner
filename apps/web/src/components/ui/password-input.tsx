@@ -18,7 +18,7 @@ const PasswordInput=React.forwardRef<HTMLInputElement,PasswordInputProps>(
         <Input ref={ref} id={id} type={isVisible?"text":"password"} disabled={disabled} className={cn("pr-11",className)} {...props}/>
         <button
           type="button"
-          className="absolute right-1 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          className="absolute right-0.5 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
           onClick={()=>setIsVisible((visible)=>!visible)}
           disabled={disabled}
           aria-label={`${action} ${visibilityLabel}`}
