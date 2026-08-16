@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Activity, ArrowUpRight, CircleCheck, Clock3, Landmark, Users } from "lucide-react";
 import type { AdminCustomer, AdminStats, AdminTransaction } from "@clipx/contracts/admin";
 import { Button } from "@/components/ui/button";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { formatCurrency } from "@/lib/banking";
 
 export default function AdminDashboard() {
@@ -16,7 +17,7 @@ export default function AdminDashboard() {
   const reviewQueue = transactions.filter((transaction) => transaction.risk === "review" || transaction.status === "pending");
 
   return (
-    <div className="space-y-9">
+    <div className="space-y-7 sm:space-y-9">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm text-muted-foreground">Banking operations</p>
@@ -28,8 +29,8 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]" aria-label="Platform summary">
-        <article className="relative overflow-hidden rounded-2xl bg-[#14251f] p-6 text-[#f4f7f5] md:row-span-2 sm:p-7">
+      <section className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr]" aria-label="Platform summary">
+        <article className="relative col-span-2 overflow-hidden rounded-2xl bg-[#211a3a] p-5 text-white shadow-[0_18px_48px_hsl(258_60%_32%/.16)] sm:p-7 md:col-span-1 md:row-span-2">
           <div className="absolute -right-12 -top-16 size-52 rounded-full border border-white/10" />
           <Landmark className="size-5 text-white/65" />
           <p className="mt-16 text-sm text-white/55">Managed customer balance</p>
@@ -54,11 +55,11 @@ export default function AdminDashboard() {
           <div className="mt-6 divide-y">
             {transactions.length === 0 && <div className="rounded-xl bg-muted/55 p-8 text-center"><p className="text-sm font-medium">No transactions recorded</p><p className="mt-1 text-xs text-muted-foreground">New account movements will appear here.</p></div>}
             {transactions.slice(0, 5).map((transaction) => (
-              <div key={transaction.id} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+              <Link key={transaction.id} to={`/admin/transactions/${encodeURIComponent(transaction.id)}`} className="flex items-center gap-4 rounded-xl py-4 outline-none transition-colors first:pt-0 last:pb-0 hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-ring sm:px-2">
                 <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-primary"><ArrowUpRight className="size-[18px]" /></div>
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{transaction.merchant}</p><p className="mt-0.5 truncate text-xs text-muted-foreground">{transaction.customerName} · {transaction.reference}</p></div>
                 <div className="text-right"><p className="font-mono text-sm font-semibold tabular-nums">{formatCurrency(transaction.amount)}</p><p className="mt-0.5 text-xs capitalize text-muted-foreground">{transaction.status}</p></div>
-              </div>
+              </Link>
             ))}
           </div>
         </article>
@@ -69,7 +70,7 @@ export default function AdminDashboard() {
             {users.filter((user) => !user.isAdmin).length === 0 && <div className="rounded-xl bg-card p-8 text-center"><p className="text-sm font-medium">No customers yet</p><p className="mt-1 text-xs text-muted-foreground">Registered customers will appear here.</p></div>}
             {users.filter((user) => !user.isAdmin).slice(0, 5).map((user) => (
               <div key={user.id} className="flex items-center gap-3 rounded-xl bg-card p-3">
-                <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">{user.initials}</div>
+                <ProfileAvatar src={user.profileImageUrl} initials={user.initials} alt={`${user.firstName} ${user.lastName} profile`} className="size-10 rounded-lg"/>
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{user.firstName} {user.lastName}</p><p className="truncate text-xs text-muted-foreground">{user.email}</p></div>
                 <span className={`size-2 rounded-full ${user.isActive ? "bg-emerald-500" : "bg-muted-foreground/40"}`} aria-label={user.isActive ? "Active" : "Inactive"} />
               </div>
@@ -82,7 +83,7 @@ export default function AdminDashboard() {
 }
 
 function Metric({ label, value, detail, icon: Icon }: { label: string; value: string; detail: string; icon: typeof Users }) {
-  return <article className="rounded-2xl border bg-card p-5 sm:p-6"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">{label}</p><Icon className="size-[18px] text-primary" strokeWidth={1.8} /></div><p className="mt-6 font-mono text-3xl font-semibold tracking-[-0.04em] tabular-nums">{value}</p><p className="mt-2 text-xs text-muted-foreground">{detail}</p></article>;
+  return <article className="min-w-0 rounded-2xl border bg-card p-4 sm:p-6"><div className="flex items-start justify-between gap-2"><p className="text-xs text-muted-foreground sm:text-sm">{label}</p><Icon className="size-4 shrink-0 text-primary sm:size-[18px]" strokeWidth={1.8} /></div><p className="mt-4 truncate font-mono text-2xl font-semibold tracking-[-0.04em] tabular-nums sm:mt-6 sm:text-3xl">{value}</p><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground sm:text-xs">{detail}</p></article>;
 }
 
 function AdminDashboardSkeleton() {

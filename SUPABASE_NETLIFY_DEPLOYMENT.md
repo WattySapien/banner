@@ -1,6 +1,6 @@
 # Supabase and Netlify Deployment Guide
 
-Last reviewed: August 15, 2026
+Last reviewed: August 16, 2026
 
 This guide reflects the current ClipX deployment architecture:
 
@@ -30,6 +30,7 @@ The repository's `.gitignore` excludes `.env` files. Example files must contain 
 | Name | Scope | Sensitive | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Functions | Yes | Supabase transaction-pooler connection used by the API |
+| `CARD_DATA_ENCRYPTION_KEY` | Functions | Yes | 32-byte base64 key used only to encrypt issued card numbers at rest |
 | `NODE_ENV` | Functions | No | Must be `production` so session cookies are secure |
 | `SESSION_DAYS` | Functions | No | Session duration; the application accepts `1` through `90` |
 | `CORS_ORIGINS` | Functions | No | Optional comma-separated origins for a genuinely separate frontend |
@@ -87,10 +88,10 @@ npm run db:migrate
 
 The migration runner prefers `DIRECT_DATABASE_URL`. If that direct endpoint is unreachable from an IPv4-only development network and the runtime `DATABASE_URL` is a Supabase transaction-pooler URI, it retries through the corresponding session pooler on port `5432`. It does not retry SQL or schema errors, and it never prints connection strings.
 
-A successful migration prints:
+A successful migration prints the applied migration list, including:
 
 ```text
-Applied 0001_banking_schema.sql
+0005_card_issuance_notifications.sql
 ```
 
 Do not print the environment, enable shell tracing, or include a connection string directly in the command.
@@ -144,10 +145,12 @@ In the Netlify project settings, open the environment-variable manager.
 
 1. Create `DATABASE_URL` using the Supabase **Transaction pooler** value.
 2. Mark it sensitive and scope it to **Functions** and the **Production** deploy context.
-3. Set `NODE_ENV` to `production` for Functions.
-4. Set `SESSION_DAYS` to an allowed integer.
-5. Add `CORS_ORIGINS` only when a separate browser origin calls the API.
-6. Save the variables and trigger a new production deploy.
+3. Generate `CARD_DATA_ENCRYPTION_KEY` in a trusted terminal with `openssl rand -base64 32`. Store the output directly in Netlify without pasting it into source, documentation, logs, or chat.
+4. Mark the key sensitive and scope it to **Functions** and the **Production** deploy context. Keep the same key across deploys; rotating it requires a controlled card-data re-encryption procedure.
+5. Set `NODE_ENV` to `production` for Functions.
+6. Set `SESSION_DAYS` to an allowed integer.
+7. Add `CORS_ORIGINS` only when a separate browser origin calls the API.
+8. Save the variables and trigger a new production deploy.
 
 Do not place secrets in `netlify.toml`; it is committed to Git. Do not make `DATABASE_URL` available to frontend build code.
 
@@ -224,6 +227,7 @@ Use synthetic test accounts and non-sensitive test data. Do not paste customer r
 ### The health endpoint returns an error
 
 - Confirm `DATABASE_URL` exists in the Netlify Production context and is scoped to Functions.
+- Confirm `CARD_DATA_ENCRYPTION_KEY` exists in the Netlify Production context, is scoped to Functions, and was not changed after cards were issued.
 - Confirm it is the transaction-pooler connection, not the migration connection.
 - If the Function log reports `ENETUNREACH`, check that `DATABASE_URL` does not use the Supabase direct host on port `5432`. The direct endpoint may require IPv6; Netlify Functions and Netlify Dev should use the transaction pooler host on port `6543`.
 - Database operations have an application deadline shorter than Netlify's Function deadline. A stalled connection is discarded so later requests do not queue behind it. Responses identify a safe stage such as `admin.customer.database.create`; they never include SQL, credentials, or connection details.

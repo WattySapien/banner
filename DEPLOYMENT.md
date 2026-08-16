@@ -35,6 +35,7 @@ Set these environment variables for Production and Preview:
 
 ```text
 DATABASE_URL=<Supabase transaction-pooler URL>
+CARD_DATA_ENCRYPTION_KEY=<private 32-byte base64 key>
 CORS_ORIGINS=https://your-web-domain.example
 SESSION_DAYS=7
 NODE_ENV=production

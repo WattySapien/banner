@@ -5,7 +5,7 @@ type AuthContextType={
   user:LocalAuthUser|null;
   signIn:(email:string,password:string)=>Promise<LocalAuthUser>;
   signInAdmin:(email:string,password:string)=>Promise<LocalAuthUser>;
-  signUp:(email:string,password:string)=>Promise<LocalAuthUser>;
+  signUp:(email:string,password:string,firstName:string,lastName:string)=>Promise<LocalAuthUser>;
   signOut:()=>Promise<void>;
   isAuthenticated:boolean;
   isLoading:boolean;
@@ -29,7 +29,7 @@ export function AuthProvider({children}:{children:React.ReactNode}){
   useEffect(()=>{let active=true;authRequest("/api/auth/user").then((account)=>{if(active)setUser(account);}).catch(()=>{if(active)setUser(null);}).finally(()=>{if(active)setIsLoading(false);});return()=>{active=false;};},[]);
   const signIn=async(email:string,password:string)=>{const account=await authRequest("/api/auth/local/login",{method:"POST",body:JSON.stringify({email,password})});setUser(account);return account;};
   const signInAdmin=async(email:string,password:string)=>{const account=await authRequest("/api/auth/admin/login",{method:"POST",body:JSON.stringify({email,password})});setUser(account);return account;};
-  const signUp=async(email:string,password:string)=>{const account=await authRequest("/api/auth/local/signup",{method:"POST",body:JSON.stringify({email,password})});setUser(account);return account;};
+  const signUp=async(email:string,password:string,firstName:string,lastName:string)=>{const account=await authRequest("/api/auth/local/signup",{method:"POST",body:JSON.stringify({email,password,firstName,lastName})});setUser(account);return account;};
   const signOut=async()=>{await authRequest("/api/auth/logout",{method:"POST"});setUser(null);};
   return <AuthContext.Provider value={{user,signIn,signInAdmin,signUp,signOut,isAuthenticated:Boolean(user),isLoading}}>{children}</AuthContext.Provider>;
 }

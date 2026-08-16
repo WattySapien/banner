@@ -29,9 +29,12 @@ Set these environment variables for Production and Deploy Previews:
 
 ```text
 DATABASE_URL=<Supabase transaction-pooler URL>
+CARD_DATA_ENCRYPTION_KEY=<private 32-byte base64 key>
 SESSION_DAYS=7
 NODE_ENV=production
 ```
+
+Generate the card-data key in a trusted terminal with `openssl rand -base64 32`, store it as a sensitive Functions-only value, and never commit or print it. Keep the same key across deploys so existing issued cards remain decryptable.
 
 `CORS_ORIGINS` is only required if another browser origin calls the API directly. Same-origin requests through the Netlify site are accepted automatically.
 

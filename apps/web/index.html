@@ -2,14 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>ClipX — Everyday banking, clearly</title>
     <meta name="description" content="Manage everyday spending, savings, transfers, and cards from one clear account." />
-    <meta name="theme-color" content="#14251f" />
+    <meta name="theme-color" content="#f5f4fa" />
     <meta property="og:title" content="ClipX — Everyday banking, clearly" />
     <meta property="og:description" content="Your money, without the noise." />
     <meta property="og:image" content="/banking-hero.png" />
     <link rel="icon" type="image/png" href="/logo.png" />
+    <script>
+      (() => {
+        try {
+          const preference = localStorage.getItem("clipx-theme") || "system";
+          const isDark = preference === "dark" || (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", isDark);
+          document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", isDark ? "#17141f" : "#f5f4fa");
+        } catch {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
