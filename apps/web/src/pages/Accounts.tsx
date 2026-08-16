@@ -26,7 +26,7 @@ export default function Accounts() {
               <span className="text-xs font-medium capitalize text-muted-foreground">{account.type}</span>
             </div>
             <h2 className="mt-7 text-base font-semibold">{account.name}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Account ending in {account.maskedNumber}</p>
+            {account.accountNumber?<p className="mt-1 font-mono text-sm tracking-[0.08em] text-muted-foreground tabular-nums">{account.accountNumber}</p>:<p className="mt-1 text-sm text-muted-foreground">Account number pending · ending in {account.maskedNumber}</p>}
             <p className="mt-6 font-mono text-3xl font-semibold tracking-[-0.035em] tabular-nums">{formatCurrency(account.balance)}</p>
             <div className="mt-5 flex items-center justify-between border-t pt-4 text-sm">
               <span className="text-muted-foreground">Available</span>

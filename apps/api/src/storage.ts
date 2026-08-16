@@ -1,9 +1,9 @@
-import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomInt, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { getDatabase, withDatabaseDeadline } from "@clipx/database";
 import type { User } from "@clipx/contracts/schema";
 import type { Account, BankCard, BankingOverview, BankTransaction, Beneficiary, CreateTransfer, UpdateCard } from "@clipx/contracts/banking";
-import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, CreateAdminCustomer, UpdateAdminUser } from "@clipx/contracts/admin";
+import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, CreateAdminAccount, CreateAdminCustomer, UpdateAdminAccount, UpdateAdminUser } from "@clipx/contracts/admin";
 import type { AccountSettings, ChangePassword, UpdatePreferences, UpdateProfile } from "@clipx/contracts/settings";
 import type { LocalAuthUser } from "@clipx/contracts/auth";
 import { atStage } from "./diagnostics.js";
@@ -14,7 +14,7 @@ const dollars = (value: number | string) => Number(value) / 100;
 const iso = (value: string | Date) => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 
 type UserRow = { id:string; email:string; first_name:string; last_name:string; profile_image_url:string|null; is_admin:number; is_active:number; created_at:string|Date; updated_at:string|Date; last_active_at:string|Date };
-type AccountRow = { id:string; name:string; type:"checking"|"savings"; masked_number:string; currency:"USD"; balance_cents:number; available_balance_cents:number; interest_rate_bps:number|null };
+type AccountRow = { id:string; name:string; type:"checking"|"savings"; account_number:string|null; masked_number:string; currency:"USD"; balance_cents:number; available_balance_cents:number; interest_rate_bps:number|null };
 type TransactionRow = { id:string; account_id:string; description:string; merchant:string; category:BankTransaction["category"]; amount_cents:number; direction:BankTransaction["direction"]; status:BankTransaction["status"]; reference:string; created_at:string|Date };
 type CardRow = { id:string; account_id:string; holder_name:string; last_four:string; network:"Visa"; type:BankCard["type"]; status:BankCard["status"]; spending_limit_cents:number; expires:string };
 type BeneficiaryRow = { id:string; name:string; bank_name:string; masked_account:string; initials:string };
@@ -31,7 +31,9 @@ const toUser = (row: UserRow): User => ({
   updatedAt: iso(row.updated_at),
 });
 const toLocalUser = (row: Pick<UserRow, "id"|"email"|"first_name"|"last_name"|"is_admin">): LocalAuthUser => ({ id:row.id, email:row.email, firstName:row.first_name, lastName:row.last_name, isAdmin:Boolean(row.is_admin) });
-const toAccount = (row: AccountRow): Account => ({ id:row.id, name:row.name, type:row.type, maskedNumber:row.masked_number, currency:row.currency, balance:dollars(row.balance_cents), availableBalance:dollars(row.available_balance_cents), ...(row.interest_rate_bps === null ? {} : { interestRate:row.interest_rate_bps / 100 }) });
+const toAccount = (row: AccountRow): Account => ({ id:row.id, name:row.name, type:row.type, ...(row.account_number ? { accountNumber:row.account_number } : {}), maskedNumber:row.masked_number, currency:row.currency, balance:dollars(row.balance_cents), availableBalance:dollars(row.available_balance_cents), ...(row.interest_rate_bps === null ? {} : { interestRate:row.interest_rate_bps / 100 }) });
+const generateAccountNumber = () => randomInt(1_000_000_000, 10_000_000_000).toString();
+const errorCode = (error:unknown) => error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
 const toTransaction = (row: TransactionRow): BankTransaction => ({ id:row.id, accountId:row.account_id, description:row.description, merchant:row.merchant, category:row.category, amount:dollars(row.amount_cents), direction:row.direction, status:row.status, reference:row.reference, createdAt:iso(row.created_at) });
 const toCard = (row: CardRow): BankCard => ({ id:row.id, accountId:row.account_id, holderName:row.holder_name, lastFour:row.last_four, network:row.network, type:row.type, status:row.status, spendingLimit:dollars(row.spending_limit_cents), expires:row.expires });
 
@@ -74,6 +76,9 @@ export interface IStorage {
   createAdminUser(input:CreateAdminCustomer): Promise<AdminCustomer>;
   getAdminUserDetails(userId:string): Promise<AdminCustomerDetails>;
   updateAdminUser(userId:string,update:UpdateAdminUser): Promise<AdminCustomer>;
+  createAdminAccount(userId:string,input:CreateAdminAccount): Promise<Account>;
+  updateAdminAccount(userId:string,accountId:string,update:UpdateAdminAccount): Promise<Account>;
+  assignAdminAccountNumber(userId:string,accountId:string): Promise<Account>;
   getAdminTransactions(): Promise<AdminTransaction[]>;
 }
 
@@ -149,7 +154,7 @@ export class PostgresStorage implements IStorage {
 
   async getAccounts(userId:string) {
     const sql = getDatabase();
-    const rows = await sql<AccountRow[]>`SELECT id,name,type,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps FROM accounts WHERE user_id=${userId} ORDER BY type`;
+    const rows = await sql<AccountRow[]>`SELECT id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps FROM accounts WHERE user_id=${userId} ORDER BY type`;
     return rows.map(toAccount);
   }
 
@@ -285,10 +290,64 @@ export class PostgresStorage implements IStorage {
     const email=(update.email??row.email).toLowerCase();
     const [duplicate]=await sql`SELECT 1 FROM users WHERE lower(email)=lower(${email}) AND id<>${userId}`;
     if(duplicate) throw Object.assign(new Error("Another account already uses this email"),{status:409});
-    await sql`UPDATE users SET email=${email},first_name=${update.firstName??row.first_name},last_name=${update.lastName??row.last_name},is_admin=${Number(update.isAdmin??Boolean(row.is_admin))},is_active=${Number(update.isActive??Boolean(row.is_active))},updated_at=now() WHERE id=${userId}`;
+    const wasActive=Boolean(row.is_active);
+    const isActive=update.isActive??wasActive;
+    await atDatabaseStage("admin.customer.database.update",()=>sql.begin(async(tx)=>{
+      await tx`UPDATE users SET email=${email},first_name=${update.firstName??row.first_name},last_name=${update.lastName??row.last_name},is_admin=${Number(update.isAdmin??Boolean(row.is_admin))},is_active=${Number(isActive)},updated_at=now() WHERE id=${userId}`;
+      if(!wasActive||!isActive)await tx`DELETE FROM sessions WHERE user_id=${userId}`;
+    }));
     const customer=(await this.getAdminUsers()).find((item)=>item.id===userId);
     if(!customer) throw Object.assign(new Error("Customer not found"),{status:404});
     return customer;
+  }
+
+  async createAdminAccount(userId:string,input:CreateAdminAccount) {
+    const sql=getDatabase();
+    const balance=cents(input.openingBalance);
+    const [row]=await atDatabaseStage("admin.account.database.create",()=>sql<AccountRow[]>`
+      INSERT INTO accounts (id,user_id,name,type,masked_number,balance_cents,available_balance_cents)
+      SELECT ${randomUUID()},id,${input.name},${input.type},${input.maskedNumber},${balance},${balance}
+      FROM users WHERE id=${userId}
+      RETURNING id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps`);
+    if(!row)throw Object.assign(new Error("Customer not found"),{status:404});
+    return toAccount(row);
+  }
+
+  async updateAdminAccount(userId:string,accountId:string,update:UpdateAdminAccount) {
+    const sql=getDatabase();
+    const [current]=await atDatabaseStage("admin.account.database.find",()=>sql<AccountRow[]>`
+      SELECT a.id,a.name,a.type,a.account_number,a.masked_number,a.currency,a.balance_cents,a.available_balance_cents,a.interest_rate_bps
+      FROM accounts a WHERE a.id=${accountId} AND a.user_id=${userId}`);
+    if(!current)throw Object.assign(new Error("Customer account not found"),{status:404});
+    if(current.account_number&&update.maskedNumber!==undefined&&update.maskedNumber!==current.masked_number)throw Object.assign(new Error("The final four digits are locked after an account number is assigned"),{status:409});
+    const [row]=await atDatabaseStage("admin.account.database.update",()=>sql<AccountRow[]>`
+      UPDATE accounts SET name=${update.name??current.name},type=${update.type??current.type},masked_number=${update.maskedNumber??current.masked_number}
+      WHERE id=${accountId} AND user_id=${userId}
+      RETURNING id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps`);
+    if(!row)throw Object.assign(new Error("Customer account not found"),{status:404});
+    return toAccount(row);
+  }
+
+  async assignAdminAccountNumber(userId:string,accountId:string) {
+    const sql=getDatabase();
+    for(let attempt=0;attempt<5;attempt+=1){
+      try{
+        const number=generateAccountNumber();
+        const [row]=await atDatabaseStage("admin.account_number.database.assign",()=>sql<AccountRow[]>`
+          UPDATE accounts SET account_number=${number},masked_number=${number.slice(-4)}
+          WHERE id=${accountId} AND user_id=${userId} AND account_number IS NULL
+          RETURNING id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps`);
+        if(row)return toAccount(row);
+        const [existing]=await atDatabaseStage("admin.account_number.database.find",()=>sql<Array<{account_number:string|null}>>`
+          SELECT account_number FROM accounts WHERE id=${accountId} AND user_id=${userId}`);
+        if(!existing)throw Object.assign(new Error("Customer account not found"),{status:404});
+        throw Object.assign(new Error("An account number has already been assigned and cannot be changed"),{status:409});
+      }catch(error){
+        if(errorCode(error)==="23505")continue;
+        throw error;
+      }
+    }
+    throw Object.assign(new Error("A unique account number could not be allocated. Try again."),{status:503});
   }
 
   async getAdminTransactions() {

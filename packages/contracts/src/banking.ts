@@ -4,6 +4,7 @@ export const accountSchema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.enum(["checking", "savings"]),
+  accountNumber: z.string().regex(/^\d{10}$/).optional(),
   maskedNumber: z.string(),
   currency: z.literal("USD"),
   balance: z.number(),

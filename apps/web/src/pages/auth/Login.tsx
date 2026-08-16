@@ -36,7 +36,7 @@ export default function LoginPage() {
       await signIn(data.email, data.password);
       toast({
         title: 'Signed in',
-        description: 'Your account is ready.',
+        description: 'Welcome back.',
       });
       navigate('/dashboard', { replace: true });
     } catch (error: any) {
