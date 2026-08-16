@@ -11,6 +11,18 @@ export const updateAdminUserSchema = z.object({
   isAdmin: z.boolean().optional(),
 }).refine((value) => Object.keys(value).length > 0, "Provide at least one user update");
 
+export const createAdminAccountSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  type: z.enum(["checking", "savings"]),
+  maskedNumber: z.string().regex(/^\d{4}$/, "Enter the final four account digits"),
+  openingBalance: z.coerce.number().min(0).max(10_000_000),
+});
+
+export const updateAdminAccountSchema = createAdminAccountSchema.omit({ openingBalance: true }).partial().refine(
+  (value) => Object.keys(value).length > 0,
+  "Provide at least one account update",
+);
+
 export const createAdminCustomerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8).max(128),
@@ -18,16 +30,13 @@ export const createAdminCustomerSchema = z.object({
   lastName: z.string().trim().max(60).default(""),
   isActive: z.boolean().default(true),
   isAdmin: z.boolean().default(false),
-  account: z.object({
-    name: z.string().trim().min(1).max(80),
-    type: z.enum(["checking", "savings"]),
-    maskedNumber: z.string().regex(/^\d{4}$/, "Enter the final four account digits"),
-    openingBalance: z.coerce.number().min(0).max(10_000_000),
-  }).optional(),
+  account: createAdminAccountSchema.optional(),
 });
 
 export type UpdateAdminUser = z.infer<typeof updateAdminUserSchema>;
 export type CreateAdminCustomer = z.infer<typeof createAdminCustomerSchema>;
+export type CreateAdminAccount = z.infer<typeof createAdminAccountSchema>;
+export type UpdateAdminAccount = z.infer<typeof updateAdminAccountSchema>;
 
 export type AdminStats = {
   totalCustomers: number;

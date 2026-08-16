@@ -14,8 +14,34 @@ test("SQLite development storage authenticates users and persists sessions",asyn
     const created=await storage.createLocalUser("local-test@clipx.local","ClipXLocal123");
     const authenticated=await storage.authenticateLocalUser(created.email,"ClipXLocal123");
     assert.equal(authenticated?.id,created.id);
+    const account=await storage.createAdminAccount(created.id,{name:"Everyday checking",type:"checking",maskedNumber:"1001",openingBalance:250.75});
+    assert.equal(account.type,"checking");
+    assert.equal(account.balance,250.75);
+    assert.equal(account.accountNumber,undefined);
+    const updatedAccount=await storage.updateAdminAccount(created.id,account.id,{name:"Primary savings",type:"savings",maskedNumber:"2002"});
+    assert.equal(updatedAccount.name,"Primary savings");
+    assert.equal(updatedAccount.type,"savings");
+    assert.equal(updatedAccount.maskedNumber,"2002");
+    assert.equal(updatedAccount.balance,250.75);
+    const numberedAccount=await storage.assignAdminAccountNumber(created.id,account.id);
+    assert.match(numberedAccount.accountNumber??"",/^\d{10}$/);
+    assert.equal(numberedAccount.maskedNumber,numberedAccount.accountNumber?.slice(-4));
+    assert.equal((await storage.getAccounts(created.id))[0]?.accountNumber,numberedAccount.accountNumber);
+    const renamedNumberedAccount=await storage.updateAdminAccount(created.id,account.id,{name:"Permanent number savings"});
+    assert.equal(renamedNumberedAccount.accountNumber,numberedAccount.accountNumber);
+    await assert.rejects(()=>storage.assignAdminAccountNumber(created.id,account.id),/already been assigned/);
+    await assert.rejects(()=>storage.updateAdminAccount(created.id,account.id,{maskedNumber:"9999"}),/locked after an account number is assigned/);
+    await assert.rejects(()=>storage.updateAdminAccount(randomUUID(),account.id,{type:"checking"}),/Customer account not found/);
+    await assert.rejects(()=>storage.assignAdminAccountNumber(randomUUID(),account.id),/Customer account not found/);
     await storage.createSession(created.id,"test-token-hash",new Date(Date.now()+60_000));
     assert.equal((await storage.getSessionUser("test-token-hash"))?.id,created.id);
+    await storage.updateAdminUser(created.id,{isActive:false});
+    assert.equal(await storage.getSessionUser("test-token-hash"),undefined);
+    await storage.createSession(created.id,"legacy-suspended-token",new Date(Date.now()+60_000));
+    await storage.updateAdminUser(created.id,{isActive:true});
+    assert.equal(await storage.getSessionUser("test-token-hash"),undefined);
+    assert.equal(await storage.getSessionUser("legacy-suspended-token"),undefined);
+    assert.equal((await storage.authenticateLocalUser(created.email,"ClipXLocal123"))?.id,created.id);
   }finally{
     await rm(directory,{recursive:true,force:true});
   }

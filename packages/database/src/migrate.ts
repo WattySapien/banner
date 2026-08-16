@@ -8,7 +8,9 @@ dotenv.config({path:path.resolve(import.meta.dirname,"../../../.env"),quiet:true
 const url = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!url) throw new Error("DIRECT_DATABASE_URL or DATABASE_URL is required");
 
-const migration = await fs.readFile(path.resolve(import.meta.dirname, "../migrations/0001_banking_schema.sql"), "utf8");
+const migrationFiles = ["0001_banking_schema.sql", "0002_account_numbers.sql"];
+const migrations = await Promise.all(migrationFiles.map((file) => fs.readFile(path.resolve(import.meta.dirname, `../migrations/${file}`), "utf8")));
+const migration = migrations.join("\n");
 const candidates: Array<{ label:string; url:string }> = [{ label:"direct", url }];
 const runtimeUrl = process.env.DATABASE_URL;
 
@@ -26,7 +28,7 @@ for (const [index,candidate] of candidates.entries()) {
   const sql = postgres(candidate.url, { max:1, prepare:false, connect_timeout:20 });
   try {
     await sql.unsafe(migration);
-    console.log(`Applied 0001_banking_schema.sql using ${candidate.label}`);
+    console.log(`Applied ${migrationFiles.join(", ")} using ${candidate.label}`);
     break;
   } catch (error) {
     const code=error&&typeof error==="object"&&"code" in error&&typeof error.code==="string"?error.code:"UNKNOWN";

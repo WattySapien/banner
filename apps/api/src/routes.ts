@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Express, NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { createTransferSchema, updateCardSchema } from "@clipx/contracts/banking";
-import { createAdminCustomerSchema, updateAdminUserSchema } from "@clipx/contracts/admin";
+import { createAdminAccountSchema, createAdminCustomerSchema, updateAdminAccountSchema, updateAdminUserSchema } from "@clipx/contracts/admin";
 import { changePasswordSchema, updatePreferencesSchema, updateProfileSchema } from "@clipx/contracts/settings";
 import { localAuthSchema, type LocalAuthUser } from "@clipx/contracts/auth";
 import { config } from "./config.js";
@@ -107,6 +107,9 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.post("/api/admin/users",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminUser(createAdminCustomerSchema.parse(req.body)));}));
   app.get("/api/admin/users/:userId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminUserDetails(req.params.userId));}));
   app.patch("/api/admin/users/:userId",asyncRoute(async(req,res)=>{assertAdmin(req);const update=updateAdminUserSchema.parse(req.body);if(req.params.userId===req.authUser.id&&update.isActive===false)throw Object.assign(new Error("You cannot suspend your own administrator account"),{status:422});if(req.params.userId===req.authUser.id&&update.isAdmin===false)throw Object.assign(new Error("You cannot remove your own administrator access"),{status:422});res.json(await storage.updateAdminUser(req.params.userId,update));}));
+  app.post("/api/admin/users/:userId/accounts",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminAccount(req.params.userId,createAdminAccountSchema.parse(req.body)));}));
+  app.patch("/api/admin/users/:userId/accounts/:accountId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.updateAdminAccount(req.params.userId,req.params.accountId,updateAdminAccountSchema.parse(req.body)));}));
+  app.post("/api/admin/users/:userId/accounts/:accountId/number",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.assignAdminAccountNumber(req.params.userId,req.params.accountId));}));
   app.get("/api/admin/transactions",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminTransactions());}));
 
   app.use((error:unknown,_req:Request,res:Response,next:NextFunction)=>{

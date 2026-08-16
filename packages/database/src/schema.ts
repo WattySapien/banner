@@ -32,6 +32,7 @@ export const accounts = pgTable("accounts", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: text("type", { enum: ["checking", "savings"] }).notNull(),
+  accountNumber: text("account_number").unique(),
   maskedNumber: text("masked_number").notNull(),
   currency: text("currency").notNull().default("USD"),
   balanceCents: integer("balance_cents").notNull(),
