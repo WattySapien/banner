@@ -40,9 +40,36 @@ export const accounts = pgTable("accounts", {
   interestRateBps: integer("interest_rate_bps"),
 }, (table) => [index("accounts_user_idx").on(table.userId)]);
 
+export const internalTransfers = pgTable("internal_transfers", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceAccountId: text("source_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  destinationAccountId: text("destination_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  amountCents: integer("amount_cents").notNull(),
+  note: text("note").notNull(),
+  reference: text("reference").notNull().unique(),
+  status: text("status", { enum: ["completed"] }).notNull().default("completed"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [index("internal_transfers_user_created_idx").on(table.userId, table.createdAt)]);
+
+export const peerTransfers = pgTable("peer_transfers", {
+  id: text("id").primaryKey(),
+  senderUserId: text("sender_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  sourceAccountId: text("source_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  recipientUserId: text("recipient_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  destinationAccountId: text("destination_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  amountCents: integer("amount_cents").notNull(),
+  note: text("note").notNull(),
+  reference: text("reference").notNull().unique(),
+  status: text("status", { enum: ["completed"] }).notNull().default("completed"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [index("peer_transfers_sender_created_idx").on(table.senderUserId, table.createdAt), index("peer_transfers_recipient_created_idx").on(table.recipientUserId, table.createdAt)]);
+
 export const transactions = pgTable("transactions", {
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  internalTransferId: text("internal_transfer_id").references(() => internalTransfers.id, { onDelete: "set null" }),
+  peerTransferId: text("peer_transfer_id").references(() => peerTransfers.id, { onDelete: "set null" }),
   description: text("description").notNull(),
   merchant: text("merchant").notNull(),
   category: text("category").notNull(),
@@ -51,7 +78,7 @@ export const transactions = pgTable("transactions", {
   status: text("status", { enum: ["completed", "pending", "failed"] }).notNull(),
   reference: text("reference").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-}, (table) => [index("transactions_account_date_idx").on(table.accountId, table.createdAt)]);
+}, (table) => [index("transactions_account_date_idx").on(table.accountId, table.createdAt), index("transactions_internal_transfer_idx").on(table.internalTransferId), index("transactions_peer_transfer_idx").on(table.peerTransferId)]);
 
 export const cards = pgTable("cards", {
   id: text("id").primaryKey(),

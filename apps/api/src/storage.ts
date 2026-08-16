@@ -2,7 +2,7 @@ import { randomBytes, randomInt, randomUUID, scrypt as nodeScrypt, timingSafeEqu
 import { promisify } from "node:util";
 import { getDatabase, withDatabaseDeadline } from "@clipx/database";
 import type { User } from "@clipx/contracts/schema";
-import type { Account, BankCard, BankingOverview, BankTransaction, Beneficiary, CreateTransfer, UpdateCard } from "@clipx/contracts/banking";
+import type { Account, BankCard, BankingOverview, BankTransaction, Beneficiary, CreateInternalTransfer, CreatePeerTransfer, CreateTransfer, InternalTransferReceipt, PeerRecipient, PeerTransferReceipt, UpdateCard } from "@clipx/contracts/banking";
 import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, CreateAdminAccount, CreateAdminCustomer, UpdateAdminAccount, UpdateAdminUser } from "@clipx/contracts/admin";
 import type { AccountSettings, ChangePassword, UpdatePreferences, UpdateProfile } from "@clipx/contracts/settings";
 import type { LocalAuthUser } from "@clipx/contracts/auth";
@@ -16,6 +16,9 @@ const iso = (value: string | Date) => value instanceof Date ? value.toISOString(
 type UserRow = { id:string; email:string; first_name:string; last_name:string; profile_image_url:string|null; is_admin:number; is_active:number; created_at:string|Date; updated_at:string|Date; last_active_at:string|Date };
 type AccountRow = { id:string; name:string; type:"checking"|"savings"; account_number:string|null; masked_number:string; currency:"USD"; balance_cents:number; available_balance_cents:number; interest_rate_bps:number|null };
 type TransactionRow = { id:string; account_id:string; description:string; merchant:string; category:BankTransaction["category"]; amount_cents:number; direction:BankTransaction["direction"]; status:BankTransaction["status"]; reference:string; created_at:string|Date };
+type InternalTransferRow = { id:string; user_id:string; source_account_id:string; destination_account_id:string; amount_cents:number; note:string; reference:string; status:"completed"; created_at:string|Date };
+type PeerTransferRow = { id:string; sender_user_id:string; source_account_id:string; recipient_user_id:string; destination_account_id:string; amount_cents:number; note:string; reference:string; status:"completed"; created_at:string|Date };
+type PeerRecipientRow = AccountRow & { user_id:string; first_name:string; last_name:string };
 type CardRow = { id:string; account_id:string; holder_name:string; last_four:string; network:"Visa"; type:BankCard["type"]; status:BankCard["status"]; spending_limit_cents:number; expires:string };
 type BeneficiaryRow = { id:string; name:string; bank_name:string; masked_account:string; initials:string };
 
@@ -66,6 +69,9 @@ export interface IStorage {
   getCards(userId:string): Promise<BankCard[]>;
   getBeneficiaries(userId:string): Promise<Beneficiary[]>;
   createTransfer(userId:string,transfer:CreateTransfer): Promise<BankTransaction>;
+  createInternalTransfer(userId:string,transfer:CreateInternalTransfer): Promise<InternalTransferReceipt>;
+  lookupPeerRecipient(userId:string,accountNumber:string): Promise<PeerRecipient>;
+  createPeerTransfer(userId:string,transfer:CreatePeerTransfer): Promise<PeerTransferReceipt>;
   updateCard(userId:string,cardId:string,update:UpdateCard): Promise<BankCard>;
   getSettings(userId:string): Promise<AccountSettings>;
   updateProfile(userId:string,update:UpdateProfile): Promise<AccountSettings>;
@@ -201,6 +207,104 @@ export class PostgresStorage implements IStorage {
     });
   }
 
+  async createInternalTransfer(userId:string,transfer:CreateInternalTransfer): Promise<InternalTransferReceipt> {
+    const sql=getDatabase();
+    return atDatabaseStage("internal_transfer.database.create",()=>sql.begin(async(tx)=>{
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`app-transfer:${userId}`}))`;
+      const [usage]=await tx<Array<{count:number}>>`
+        SELECT (
+          (SELECT count(*) FROM internal_transfers WHERE user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
+          +(SELECT count(*) FROM peer_transfers WHERE sender_user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
+        )::int count`;
+      if(Number(usage.count)>=10)throw Object.assign(new Error("You have reached the limit of 10 transfers between your accounts per hour"),{status:429});
+
+      const accounts=await tx<AccountRow[]>`
+        SELECT id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps
+        FROM accounts
+        WHERE user_id=${userId} AND id IN (${transfer.sourceAccountId},${transfer.destinationAccountId})
+        ORDER BY id FOR UPDATE`;
+      const source=accounts.find((account)=>account.id===transfer.sourceAccountId);
+      const destination=accounts.find((account)=>account.id===transfer.destinationAccountId);
+      if(!source)throw Object.assign(new Error("Source account not found"),{status:404});
+      if(!destination)throw Object.assign(new Error("Destination account not found"),{status:404});
+      const amountCents=cents(transfer.amount);
+      if(Number(source.available_balance_cents)<amountCents)throw Object.assign(new Error("Insufficient available balance"),{status:422});
+
+      const id=randomUUID();
+      const reference=`INT-${randomBytes(8).toString("hex").toUpperCase()}`;
+      await tx`UPDATE accounts SET balance_cents=balance_cents-${amountCents},available_balance_cents=available_balance_cents-${amountCents} WHERE id=${source.id}`;
+      await tx`UPDATE accounts SET balance_cents=balance_cents+${amountCents},available_balance_cents=available_balance_cents+${amountCents} WHERE id=${destination.id}`;
+      const [created]=await tx<InternalTransferRow[]>`
+        INSERT INTO internal_transfers (id,user_id,source_account_id,destination_account_id,amount_cents,note,reference)
+        VALUES (${id},${userId},${source.id},${destination.id},${amountCents},${transfer.note},${reference})
+        RETURNING *`;
+      await tx`
+        INSERT INTO transactions (id,account_id,internal_transfer_id,description,merchant,category,amount_cents,direction,status,reference)
+        VALUES
+          (${randomUUID()},${source.id},${id},${transfer.note},${`To ${destination.name}`},'transfer',${amountCents},'debit','completed',${`${reference}-OUT`}),
+          (${randomUUID()},${destination.id},${id},${transfer.note},${`From ${source.name}`},'transfer',${amountCents},'credit','completed',${`${reference}-IN`})`;
+      return {id:created.id,sourceAccountId:source.id,sourceAccountName:source.name,destinationAccountId:destination.id,destinationAccountName:destination.name,amount:dollars(created.amount_cents),note:created.note,reference:created.reference,createdAt:iso(created.created_at)};
+    }));
+  }
+
+  async lookupPeerRecipient(userId:string,accountNumber:string):Promise<PeerRecipient>{
+    const sql=getDatabase();
+    const [recipient]=await atDatabaseStage("peer_transfer.recipient.lookup",()=>sql<PeerRecipientRow[]>`
+      SELECT a.id,a.user_id,a.name,a.type,a.account_number,a.masked_number,a.currency,a.balance_cents,a.available_balance_cents,a.interest_rate_bps,u.first_name,u.last_name
+      FROM accounts a JOIN users u ON u.id=a.user_id
+      WHERE a.account_number=${accountNumber} AND u.is_active=1`);
+    if(!recipient)throw Object.assign(new Error("Recipient account not found"),{status:404});
+    if(recipient.user_id===userId)throw Object.assign(new Error("Use Between my accounts to transfer to your own account"),{status:422});
+    return{accountNumber,accountName:recipient.name,recipientName:`${recipient.first_name} ${recipient.last_name}`.trim()};
+  }
+
+  async createPeerTransfer(userId:string,transfer:CreatePeerTransfer):Promise<PeerTransferReceipt>{
+    const sql=getDatabase();
+    return atDatabaseStage("peer_transfer.database.create",()=>sql.begin(async(tx)=>{
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`app-transfer:${userId}`}))`;
+      const [usage]=await tx<Array<{count:number}>>`
+        SELECT (
+          (SELECT count(*) FROM internal_transfers WHERE user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
+          +(SELECT count(*) FROM peer_transfers WHERE sender_user_id=${userId} AND status='completed' AND created_at>=now()-interval '1 hour')
+        )::int count`;
+      if(Number(usage.count)>=10)throw Object.assign(new Error("You have reached the limit of 10 in-app transfers per hour"),{status:429});
+
+      const [resolvedRecipient]=await tx<PeerRecipientRow[]>`
+        SELECT a.id,a.user_id,a.name,a.type,a.account_number,a.masked_number,a.currency,a.balance_cents,a.available_balance_cents,a.interest_rate_bps,u.first_name,u.last_name
+        FROM accounts a JOIN users u ON u.id=a.user_id
+        WHERE a.account_number=${transfer.recipientAccountNumber} AND u.is_active=1
+        FOR SHARE OF u`;
+      if(!resolvedRecipient)throw Object.assign(new Error("Recipient account not found"),{status:404});
+      if(resolvedRecipient.user_id===userId)throw Object.assign(new Error("Use Between my accounts to transfer to your own account"),{status:422});
+
+      const lockedAccounts=await tx<Array<AccountRow&{user_id:string}>>`
+        SELECT a.id,a.user_id,a.name,a.type,a.account_number,a.masked_number,a.currency,a.balance_cents,a.available_balance_cents,a.interest_rate_bps
+        FROM accounts a WHERE a.id IN (${transfer.sourceAccountId},${resolvedRecipient.id})
+        ORDER BY a.id FOR UPDATE`;
+      const source=lockedAccounts.find((account)=>account.id===transfer.sourceAccountId&&account.user_id===userId);
+      const destination=lockedAccounts.find((account)=>account.id===resolvedRecipient.id&&account.user_id===resolvedRecipient.user_id);
+      if(!source)throw Object.assign(new Error("Source account not found"),{status:404});
+      if(!destination)throw Object.assign(new Error("Recipient account not found"),{status:404});
+      const amountCents=cents(transfer.amount);
+      if(Number(source.available_balance_cents)<amountCents)throw Object.assign(new Error("Insufficient available balance"),{status:422});
+
+      const id=randomUUID(),reference=`P2P-${randomBytes(8).toString("hex").toUpperCase()}`;
+      await tx`UPDATE accounts SET balance_cents=balance_cents-${amountCents},available_balance_cents=available_balance_cents-${amountCents} WHERE id=${source.id}`;
+      await tx`UPDATE accounts SET balance_cents=balance_cents+${amountCents},available_balance_cents=available_balance_cents+${amountCents} WHERE id=${destination.id}`;
+      const [created]=await tx<PeerTransferRow[]>`
+        INSERT INTO peer_transfers (id,sender_user_id,source_account_id,recipient_user_id,destination_account_id,amount_cents,note,reference)
+        VALUES (${id},${userId},${source.id},${resolvedRecipient.user_id},${destination.id},${amountCents},${transfer.note},${reference})
+        RETURNING *`;
+      const recipientName=`${resolvedRecipient.first_name} ${resolvedRecipient.last_name}`.trim();
+      await tx`
+        INSERT INTO transactions (id,account_id,peer_transfer_id,description,merchant,category,amount_cents,direction,status,reference)
+        VALUES
+          (${randomUUID()},${source.id},${id},${transfer.note},${recipientName},'transfer',${amountCents},'debit','completed',${`${reference}-OUT`}),
+          (${randomUUID()},${destination.id},${id},${transfer.note},${`From ${source.name}`},'transfer',${amountCents},'credit','completed',${`${reference}-IN`})`;
+      return{id:created.id,sourceAccountId:source.id,sourceAccountName:source.name,recipientAccountNumber:transfer.recipientAccountNumber,destinationAccountName:destination.name,recipientName,amount:dollars(created.amount_cents),note:created.note,reference:created.reference,createdAt:iso(created.created_at)};
+    }));
+  }
+
   async updateCard(userId:string,cardId:string,update:UpdateCard) {
     const sql=getDatabase();
     const [row]=await sql<CardRow[]>`SELECT c.* FROM cards c JOIN accounts a ON a.id=c.account_id WHERE c.id=${cardId} AND a.user_id=${userId}`;
@@ -247,7 +351,9 @@ export class PostgresStorage implements IStorage {
       SELECT (SELECT count(*)::int FROM users WHERE is_admin=0) total,
       (SELECT count(*)::int FROM users WHERE is_admin=0 AND is_active=1) active,
       (SELECT coalesce(sum(balance_cents),0)::bigint FROM accounts) balance_cents,
-      (SELECT coalesce(sum(amount_cents),0)::bigint FROM transactions WHERE status='completed') volume_cents,
+      ((SELECT coalesce(sum(amount_cents),0)::bigint FROM transactions WHERE status='completed' AND internal_transfer_id IS NULL AND peer_transfer_id IS NULL)
+        +(SELECT coalesce(sum(amount_cents),0)::bigint FROM internal_transfers WHERE status='completed')
+        +(SELECT coalesce(sum(amount_cents),0)::bigint FROM peer_transfers WHERE status='completed')) volume_cents,
       (SELECT count(*)::int FROM transactions WHERE status='pending') pending`);
     return {totalCustomers:Number(row.total),activeCustomers:Number(row.active),managedBalance:dollars(row.balance_cents),processedVolume:dollars(row.volume_cents),pendingTransactions:Number(row.pending),systemStatus:"operational"};
   }

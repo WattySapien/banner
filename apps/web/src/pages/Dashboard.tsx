@@ -1,15 +1,19 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowLeftRight, ArrowUpRight, CreditCard, Plus, WalletCards } from "lucide-react";
+import { ArrowLeftRight, ArrowUpRight, Check, Copy, CreditCard, Plus, WalletCards } from "lucide-react";
 import type { BankingOverview, BankCard, BankTransaction } from "@clipx/contracts/banking";
 import type { AccountSettings } from "@clipx/contracts/settings";
 import type { User } from "@clipx/contracts/schema";
 import { Button } from "@/components/ui/button";
 import { TransactionList } from "@/components/TransactionList";
+import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/banking";
 
 export default function Dashboard() {
+  const { toast } = useToast();
+  const [copiedAccountId, setCopiedAccountId] = useState<string>();
   const { data: overview, isLoading } = useQuery<BankingOverview>({ queryKey: ["/api/overview"] });
   const { data: transactions = [] } = useQuery<BankTransaction[]>({ queryKey: ["/api/transactions"] });
   const { data: cards = [] } = useQuery<BankCard[]>({ queryKey: ["/api/cards"] });
@@ -20,6 +24,16 @@ export default function Dashboard() {
     return <DashboardSkeleton />;
   }
   const netCashFlow = overview.monthlyIncome - overview.monthlySpending;
+  const copyAccountNumber = async (accountId:string, accountNumber:string) => {
+    try {
+      await navigator.clipboard.writeText(accountNumber);
+      setCopiedAccountId(accountId);
+      window.setTimeout(() => setCopiedAccountId((current) => current === accountId ? undefined : current), 1800);
+      toast({ title: "Account number copied", description: "It is ready to paste." });
+    } catch {
+      toast({ title: "Could not copy account number", description: "Copy permission was denied by the browser.", variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -98,7 +112,7 @@ export default function Dashboard() {
                 <div className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><WalletCards className="size-5" strokeWidth={1.8} /></div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{account.name}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Ending in {account.maskedNumber}</p>
+                  {account.accountNumber?<div className="mt-1 flex items-center gap-1.5"><span className="font-mono text-xs tracking-[0.08em] text-muted-foreground tabular-nums">{account.accountNumber}</span><button type="button" onClick={()=>copyAccountNumber(account.id,account.accountNumber!)} className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Copy account number for ${account.name}`} title="Copy account number">{copiedAccountId===account.id?<Check className="size-3.5 text-primary"/>:<Copy className="size-3.5"/>}</button></div>:<p className="mt-0.5 text-xs text-muted-foreground">Account number pending · ending in {account.maskedNumber}</p>}
                 </div>
                 <p className="font-mono text-sm font-semibold tabular-nums">{settings?.preferences.showBalances === false ? "••••" : formatCurrency(account.balance)}</p>
               </div>
