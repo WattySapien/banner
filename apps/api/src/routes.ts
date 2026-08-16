@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Express, NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
-import { createTransferSchema, updateCardSchema } from "@clipx/contracts/banking";
+import { accountNumberSchema, createInternalTransferSchema, createPeerTransferSchema, createTransferSchema, updateCardSchema } from "@clipx/contracts/banking";
 import { createAdminAccountSchema, createAdminCustomerSchema, updateAdminAccountSchema, updateAdminUserSchema } from "@clipx/contracts/admin";
 import { changePasswordSchema, updatePreferencesSchema, updateProfileSchema } from "@clipx/contracts/settings";
 import { localAuthSchema, type LocalAuthUser } from "@clipx/contracts/auth";
@@ -95,6 +95,9 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.patch("/api/cards/:cardId",asyncRoute(async(req,res)=>{res.json(await storage.updateCard(req.authUser.id,req.params.cardId,updateCardSchema.parse(req.body)));}));
   app.get("/api/beneficiaries",asyncRoute(async(req,res)=>{res.json(await storage.getBeneficiaries(req.authUser.id));}));
   app.post("/api/transfers",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createTransfer(req.authUser.id,createTransferSchema.parse(req.body)));}));
+  app.post("/api/transfers/internal",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createInternalTransfer(req.authUser.id,createInternalTransferSchema.parse(req.body)));}));
+  app.post("/api/transfers/recipient/lookup",asyncRoute(async(req,res)=>{res.json(await storage.lookupPeerRecipient(req.authUser.id,accountNumberSchema.parse(req.body?.accountNumber)));}));
+  app.post("/api/transfers/peer",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createPeerTransfer(req.authUser.id,createPeerTransferSchema.parse(req.body)));}));
   app.get("/api/settings",asyncRoute(async(req,res)=>{res.json(await storage.getSettings(req.authUser.id));}));
   app.patch("/api/settings/profile",asyncRoute(async(req,res)=>{res.json(await storage.updateProfile(req.authUser.id,updateProfileSchema.parse(req.body)));}));
   app.patch("/api/settings/preferences",asyncRoute(async(req,res)=>{res.json(await storage.updatePreferences(req.authUser.id,updatePreferencesSchema.parse(req.body)));}));
