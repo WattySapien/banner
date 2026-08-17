@@ -145,7 +145,7 @@ export default function Dashboard() {
                   <div className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary"><CreditCard className="size-4" /></div>
                   <img src={card.network === "Mastercard" ? "/icons/mastercard.svg?v=2" : "/icons/visa.svg"} alt={card.network} className="size-10 object-contain" />
                 </div>
-                <p className="mt-6 font-mono text-sm tracking-[0.1em] tabular-nums">•••• •••• •••• {card.lastFour}</p>
+                <p className="mt-6 font-mono text-sm tracking-[0.1em] tabular-nums">**** **** **** {card.lastFour}</p>
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-[11px] font-medium">{card.holderName}</p>

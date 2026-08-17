@@ -81,6 +81,7 @@ export interface IStorage {
   getSessionUser(tokenHash:string): Promise<LocalAuthUser|undefined>;
   deleteSession(tokenHash:string): Promise<void>;
   deleteUserSessions(userId:string): Promise<void>;
+  recordSecurityEvent?(eventType:string,userId?:string,resourceId?:string,ipAddress?:string): Promise<void>;
   getOverview(userId:string): Promise<BankingOverview>;
   getAccounts(userId:string): Promise<Account[]>;
   getTransactions(userId:string): Promise<BankTransaction[]>;
@@ -204,6 +205,11 @@ export class PostgresStorage implements IStorage {
   async deleteUserSessions(userId:string){
     const sql=getDatabase();
     await sql`DELETE FROM sessions WHERE user_id=${userId}`;
+  }
+
+  async recordSecurityEvent(eventType:string,userId?:string,resourceId?:string,ipAddress?:string){
+    const sql=getDatabase();
+    await sql`INSERT INTO security_audit_events (id,user_id,event_type,resource_id,ip_address) VALUES (${randomUUID()},${userId??null},${eventType},${resourceId??null},${ipAddress??null})`;
   }
 
   async getAccounts(userId:string) {

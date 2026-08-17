@@ -8,10 +8,11 @@ import { localAuthSchema, localSignupSchema, type LocalAuthUser } from "@clipx/c
 import { supportMessageInputSchema } from "@clipx/contracts/support";
 import { config } from "./config.js";
 import { atStage } from "./diagnostics.js";
-import { isLocalRequest } from "./network-access.js";
+import { getClientIp, isLocalRequest } from "./network-access.js";
+import { rateLimit } from "./security.js";
 import type { IStorage } from "./storage.js";
 
-const SESSION_COOKIE="clipx_session";
+const SESSION_COOKIE=config.isProduction?"__Host-ardenvia_session":"ardenvia_session";
 const MAX_AVATAR_BYTES=2*1024*1024;
 const avatarBodyParser=express.raw({type:["image/jpeg","image/png","image/webp"],limit:MAX_AVATAR_BYTES});
 const unsafeMethods=new Set(["POST","PUT","PATCH","DELETE"]);
@@ -20,7 +21,7 @@ type AuthenticatedRequest=Request & { authUser:LocalAuthUser };
 const asyncRoute=(handler:(req:AuthenticatedRequest,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{Promise.resolve(handler(req as AuthenticatedRequest,res)).catch(next);};
 const hashToken=(token:string)=>createHash("sha256").update(token).digest("hex");
 const readCookie=(req:Request,name:string)=>req.headers.cookie?.split(";").map((part)=>part.trim()).find((part)=>part.startsWith(`${name}=`))?.slice(name.length+1);
-const cookieOptions=(expires?:Date)=>["Path=/","HttpOnly","SameSite=Lax",config.isProduction?"Secure":"",expires?`Expires=${expires.toUTCString()}`:""].filter(Boolean).join("; ");
+const cookieOptions=(expires?:Date)=>["Path=/","HttpOnly","SameSite=Strict",config.isProduction?"Secure":"",expires?`Expires=${expires.toUTCString()}`:""].filter(Boolean).join("; ");
 
 async function issueSession(storage:IStorage,userId:string,res:Response){
   const token=randomBytes(32).toString("base64url");
@@ -45,14 +46,28 @@ function readAvatarUpload(req:Request){
   if(!data||data.byteLength===0)throw Object.assign(new Error("Choose a JPEG, PNG, or WebP profile image"),{status:415});
   const contentType=avatarContentType(data);
   if(!contentType||contentType!==req.header("content-type")?.split(";")[0]?.trim().toLowerCase())throw Object.assign(new Error("The uploaded file is not a valid JPEG, PNG, or WebP image"),{status:415});
+  // Reject oversized raster dimensions before persistence to limit image
+  // decompression/memory abuse. The browser optimization is not trusted.
+  if(contentType==="image/png"&&data.length>=24){
+    const width=data.readUInt32BE(16),height=data.readUInt32BE(20);
+    if(width*height>25_000_000)throw Object.assign(new Error("The image dimensions are too large"),{status:413});
+  }
+  if(contentType==="image/webp"&&data.length>=30&&data.subarray(12,16).toString("ascii")==="VP8X"){
+    const width=1+data[24]+(data[25]<<8)+(data[26]<<16),height=1+data[27]+(data[28]<<8)+(data[29]<<16);
+    if(width*height>25_000_000)throw Object.assign(new Error("The image dimensions are too large"),{status:413});
+  }
   return {contentType,data};
 }
 
 export function registerRoutes(app:Express,storage:IStorage) {
+  const audit=(eventType:string,req:Request,userId?:string,resourceId?:string)=>storage.recordSecurityEvent?.(eventType,userId,resourceId,getClientIp(req)).catch(()=>undefined);
   app.use((req,res,next)=>{
     res.setHeader("X-Content-Type-Options","nosniff");
     res.setHeader("X-Frame-Options","DENY");
     res.setHeader("Referrer-Policy","strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy","camera=(), microphone=(), geolocation=(), payment=()");
+    res.setHeader("Content-Security-Policy","default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'");
+    if(config.isProduction)res.setHeader("Strict-Transport-Security","max-age=31536000; includeSubDomains");
     const forwardedHost=req.header("x-forwarded-host")?.split(",")[0]?.trim();
     const requestHost=forwardedHost??req.header("host");
     let isSameOrigin=false;
@@ -66,25 +81,28 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.get("/api/health",asyncRoute(async(_req,res)=>{await atStage("health.database.ping",()=>storage.ping());res.json({status:"ok",storage:storage.kind,timestamp:new Date().toISOString()});}));
   app.get("/api",asyncRoute(async(_req,res)=>{res.json({name:"Ardenvia Bank Banking API",status:"production-ready"});}));
 
-  app.post("/api/auth/local/signup",asyncRoute(async(req,res)=>{
+  app.post("/api/auth/local/signup",rateLimit({name:"signup",windowMs:60*60_000,max:5}),asyncRoute(async(req,res)=>{
     const {email,password,firstName,lastName}=localSignupSchema.parse(req.body);
     const user=await atStage("signup.user.create",()=>storage.createLocalUser(email,password,firstName,lastName));
     await issueSession(storage,user.id,res);
+    void audit("signup",req,user.id);
     res.status(201).json(user);
   }));
-  app.post("/api/auth/local/login",asyncRoute(async(req,res)=>{
+  app.post("/api/auth/local/login",rateLimit({name:"login",windowMs:15*60_000,max:10}),asyncRoute(async(req,res)=>{
     const {email,password}=localAuthSchema.parse(req.body);
     const user=await atStage("login.credentials.verify",()=>storage.authenticateLocalUser(email,password));
     if(!user) throw Object.assign(new Error("Invalid email or password"),{status:401});
     await issueSession(storage,user.id,res);
+    void audit("login",req,user.id);
     res.json(user);
   }));
-  app.post("/api/auth/admin/login",asyncRoute(async(req,res)=>{
+  app.post("/api/auth/admin/login",rateLimit({name:"admin-login",windowMs:15*60_000,max:5}),asyncRoute(async(req,res)=>{
     assertLocalAdminRequest(req);
     const {email,password}=localAuthSchema.parse(req.body);
     const user=await atStage("admin_login.credentials.verify",()=>storage.authenticateLocalUser(email,password));
     if(!user||!user.isAdmin) throw Object.assign(new Error("Invalid administrator credentials"),{status:401});
     await issueSession(storage,user.id,res);
+    void audit("admin_login",req,user.id);
     res.json(user);
   }));
   app.post("/api/auth/logout",asyncRoute(async(req,res)=>{
@@ -127,7 +145,7 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.get("/api/transactions",asyncRoute(async(req,res)=>{res.json(await storage.getTransactions(req.authUser.id));}));
   app.get("/api/transactions/:transactionId",asyncRoute(async(req,res)=>{res.json(await storage.getTransaction(req.authUser.id,req.params.transactionId));}));
   app.get("/api/cards",asyncRoute(async(req,res)=>{res.json(await storage.getCards(req.authUser.id));}));
-  app.get("/api/cards/:cardId/details",asyncRoute(async(req,res)=>{res.setHeader("Cache-Control","no-store, private");res.json(await storage.getCardDetails(req.authUser.id,req.params.cardId));}));
+  app.get("/api/cards/:cardId/details",rateLimit({name:"card-reveal",windowMs:10*60_000,max:5}),asyncRoute(async(req,res)=>{res.setHeader("Cache-Control","no-store, private");res.json(await storage.getCardDetails(req.authUser.id,req.params.cardId));void audit("card_details_revealed",req,req.authUser.id,req.params.cardId);}));
   app.patch("/api/cards/:cardId",asyncRoute(async(req,res)=>{res.json(await storage.updateCard(req.authUser.id,req.params.cardId,updateCardSchema.parse(req.body)));}));
   app.get("/api/notifications",asyncRoute(async(req,res)=>{res.json(await storage.getNotifications(req.authUser.id));}));
   app.patch("/api/notifications/read-all",asyncRoute(async(req,res)=>{await storage.markAllNotificationsRead(req.authUser.id);res.status(204).end();}));
@@ -136,10 +154,10 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.post("/api/support/messages",asyncRoute(async(req,res)=>{const {body}=supportMessageInputSchema.parse(req.body);res.status(201).json(await storage.createSupportMessage(req.authUser.id,req.authUser.id,"customer",body));}));
   app.patch("/api/support/messages/read",asyncRoute(async(req,res)=>{await storage.markSupportMessagesRead(req.authUser.id,"customer");res.status(204).end();}));
   app.get("/api/beneficiaries",asyncRoute(async(req,res)=>{res.json(await storage.getBeneficiaries(req.authUser.id));}));
-  app.post("/api/transfers",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createTransfer(req.authUser.id,createTransferSchema.parse(req.body)));}));
-  app.post("/api/transfers/internal",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createInternalTransfer(req.authUser.id,createInternalTransferSchema.parse(req.body)));}));
+  app.post("/api/transfers",rateLimit({name:"transfer",windowMs:10*60_000,max:20}),asyncRoute(async(req,res)=>{res.status(201).json(await storage.createTransfer(req.authUser.id,createTransferSchema.parse(req.body)));}));
+  app.post("/api/transfers/internal",rateLimit({name:"internal-transfer",windowMs:10*60_000,max:20}),asyncRoute(async(req,res)=>{res.status(201).json(await storage.createInternalTransfer(req.authUser.id,createInternalTransferSchema.parse(req.body)));}));
   app.post("/api/transfers/recipient/lookup",asyncRoute(async(req,res)=>{res.json(await storage.lookupPeerRecipient(req.authUser.id,accountNumberSchema.parse(req.body?.accountNumber)));}));
-  app.post("/api/transfers/peer",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createPeerTransfer(req.authUser.id,createPeerTransferSchema.parse(req.body)));}));
+  app.post("/api/transfers/peer",rateLimit({name:"peer-transfer",windowMs:10*60_000,max:20}),asyncRoute(async(req,res)=>{res.status(201).json(await storage.createPeerTransfer(req.authUser.id,createPeerTransferSchema.parse(req.body)));}));
   app.get("/api/settings",asyncRoute(async(req,res)=>{res.json(await storage.getSettings(req.authUser.id));}));
   app.patch("/api/settings/profile",asyncRoute(async(req,res)=>{res.json(await storage.updateProfile(req.authUser.id,updateProfileSchema.parse(req.body)));}));
   app.patch("/api/settings/preferences",asyncRoute(async(req,res)=>{res.json(await storage.updatePreferences(req.authUser.id,updatePreferencesSchema.parse(req.body)));}));
@@ -158,9 +176,9 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.post("/api/admin/users/:userId/accounts",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminAccount(req.params.userId,createAdminAccountSchema.parse(req.body)));}));
   app.patch("/api/admin/users/:userId/accounts/:accountId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.updateAdminAccount(req.params.userId,req.params.accountId,updateAdminAccountSchema.parse(req.body)));}));
   app.post("/api/admin/users/:userId/accounts/:accountId/number",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.assignAdminAccountNumber(req.params.userId,req.params.accountId));}));
-  app.post("/api/admin/users/:userId/cards",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminCard(req.params.userId,createAdminCardSchema.parse(req.body)));}));
-  app.patch("/api/admin/users/:userId/cards/:cardId/revoke",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.revokeAdminCard(req.params.userId,req.params.cardId));}));
-  app.delete("/api/admin/users/:userId/cards/:cardId",asyncRoute(async(req,res)=>{assertAdmin(req);await storage.deleteAdminCard(req.params.userId,req.params.cardId);res.status(204).end();}));
+  app.post("/api/admin/users/:userId/cards",asyncRoute(async(req,res)=>{assertAdmin(req);const card=await storage.createAdminCard(req.params.userId,createAdminCardSchema.parse(req.body));res.status(201).json(card);void audit("admin_card_issued",req,req.authUser.id,card.id);}));
+  app.patch("/api/admin/users/:userId/cards/:cardId/revoke",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.revokeAdminCard(req.params.userId,req.params.cardId));void audit("admin_card_revoked",req,req.authUser.id,req.params.cardId);}));
+  app.delete("/api/admin/users/:userId/cards/:cardId",asyncRoute(async(req,res)=>{assertAdmin(req);await storage.deleteAdminCard(req.params.userId,req.params.cardId);void audit("admin_card_deleted",req,req.authUser.id,req.params.cardId);res.status(204).end();}));
   app.get("/api/admin/transactions",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminTransactions());}));
   app.get("/api/admin/transactions/:transactionId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminTransaction(req.params.transactionId));}));
 

@@ -24,7 +24,7 @@ export const updateAdminAccountSchema = createAdminAccountSchema.omit({ openingB
 
 export const createAdminCustomerSchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(8).max(128),
+  password: z.string().min(12).max(128),
   firstName: z.string().trim().min(1).max(60),
   lastName: z.string().trim().max(60).default(""),
   isActive: z.boolean().default(true),

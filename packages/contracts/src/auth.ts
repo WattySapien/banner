@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const localAuthSchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(8),
+  password: z.string().min(12),
 });
 
 export const localSignupSchema = localAuthSchema.extend({
