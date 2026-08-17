@@ -34,8 +34,11 @@ export default function Landing() {
             <div className="mt-12 flex flex-wrap gap-x-7 gap-y-3 border-t pt-5 text-xs text-muted-foreground"><span>No monthly fee</span><span>Instant card controls</span><span>24/7 account access</span></div>
           </div>
           <div className="relative min-h-[28rem] overflow-hidden rounded-[1.75rem] bg-secondary lg:min-h-[38rem]">
-            <img src="/banking-hero.png" alt="Ardenvia Bank customer reviewing his finances at home" className="absolute inset-0 h-full w-full object-cover" />
-            <div className="absolute bottom-5 left-5 right-5 max-w-sm rounded-2xl border border-white/60 bg-white/90 p-5 text-[#211a3a] shadow-[0_20px_60px_hsl(258_60%_32%/.16)] backdrop-blur-md sm:bottom-7 sm:left-7">
+            <picture>
+              <source type="image/webp" srcSet="/banking-hero-768.webp 768w, /banking-hero-1280.webp 1280w" sizes="(max-width: 1024px) 100vw, 58vw" />
+              <img src="/banking-hero-1280.webp" alt="Ardenvia Bank customer reviewing his finances at home" width="1280" height="801" fetchPriority="high" decoding="async" className="absolute inset-0 h-full w-full object-cover" />
+            </picture>
+            <div className="absolute bottom-5 left-5 right-5 max-w-sm rounded-2xl border border-white/60 bg-white/90 p-5 text-[#211a3a] shadow-[0_20px_60px_hsl(258_60%_32%/.16)] sm:bottom-7 sm:left-7 supports-[backdrop-filter]:backdrop-blur-md">
               <p className="text-xs font-medium text-[#7650db]">One clear account view</p>
               <p className="mt-2 text-lg font-semibold tracking-tight">Balances, cards, and activity stay together.</p>
               <p className="mt-2 text-xs leading-relaxed text-[#6d6879]">Your figures appear only after you sign in.</p>

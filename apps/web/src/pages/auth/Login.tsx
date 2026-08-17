@@ -73,7 +73,7 @@ export default function LoginPage() {
             id="email"
             data-testid="auth-email"
             type="email"
-            placeholder="name@example.com"
+            placeholder=""
             autoComplete="email"
             {...register('email')}
             error={errors.email?.message}
@@ -92,7 +92,7 @@ export default function LoginPage() {
           <PasswordInput
             id="password"
             data-testid="auth-password"
-            placeholder="••••••••"
+            placeholder=""
             autoComplete="current-password"
             visibilityLabel="password"
             {...register('password')}

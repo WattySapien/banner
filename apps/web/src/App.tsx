@@ -9,7 +9,6 @@ import { queryClient } from "@/lib/queryClient";
 import BankingLayout from "@/components/BankingLayout";
 import AdminLayout from "@/components/AdminLayout";
 import AuthLayout from "@/components/AuthLayout";
-const Landing=lazy(()=>import("@/pages/Landing"));
 const Login=lazy(()=>import("@/pages/auth/Login"));
 const SignUp=lazy(()=>import("@/pages/auth/SignUp"));
 const AdminLogin=lazy(()=>import("@/pages/auth/AdminLogin"));
@@ -73,7 +72,7 @@ function ProtectedAdminRoute({ children }: { children: React.ReactNode }) {
 function BankingRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<AuthLayout><Login /></AuthLayout>} />
       <Route path="/login" element={<AuthLayout><Login /></AuthLayout>} />
       <Route path="/signup" element={<AuthLayout><SignUp /></AuthLayout>} />
       <Route path="/admin/login" element={<AdminLogin />} />
