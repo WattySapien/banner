@@ -7,7 +7,7 @@ export function FluidBackdrop() {
 
   useGSAP(() => {
     const media = gsap.matchMedia();
-    media.add("(prefers-reduced-motion: no-preference)", () => {
+    media.add("(prefers-reduced-motion: no-preference) and (min-width: 768px)", () => {
       const blobs = gsap.utils.toArray<HTMLElement>("[data-fluid-blob]", scope.current ?? undefined);
       const movements = [
         { x: "18vw", y: "13vh", scale: 1.18, duration: 14 },

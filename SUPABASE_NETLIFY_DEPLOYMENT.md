@@ -2,13 +2,13 @@
 
 Last reviewed: August 16, 2026
 
-This guide reflects the current ClipX deployment architecture:
+This guide reflects the current Ardenvia Bank deployment architecture:
 
 - Netlify serves the Vite frontend from `apps/web/dist`.
 - Netlify Functions run the Express API.
 - `/api/*` is routed to the API by the checked-in `netlify.toml`.
 - The API connects to Supabase PostgreSQL from the server.
-- ClipX authentication remains application-managed; Supabase Auth is not used.
+- Ardenvia Bank authentication remains application-managed; Supabase Auth is not used.
 - No database credential or Supabase client is exposed through the browser bundle.
 
 ## Security rules
@@ -122,7 +122,7 @@ Apply the PostgreSQL schema first, back up the target database, and then run:
 npm run db:migrate:sqlite
 ```
 
-The importer uses `clipx.db` by default. Set `SQLITE_DATABASE_PATH` locally only when the source is elsewhere. Skip this step for a new deployment.
+The importer uses the legacy local SQLite database by default. Set `SQLITE_DATABASE_PATH` locally only when the source is elsewhere. Skip this step for a new deployment.
 
 ## 4. Confirm the Netlify project configuration
 

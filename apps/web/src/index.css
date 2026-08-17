@@ -85,6 +85,15 @@
     background-attachment: fixed;
   }
 
+  [data-motion-list] > * {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 4.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce), (max-width: 767px) {
+    .fluid-blob { display: none; }
+  }
+
   #root {
     min-height: 100dvh;
   }

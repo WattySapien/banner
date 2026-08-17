@@ -1,6 +1,6 @@
-# Deploy ClipX to Netlify
+# Deploy Ardenvia Bank to Netlify
 
-ClipX deploys to one Netlify site: Vite assets are served from `apps/web/dist`, and `/api/*` is rewritten to the Express application in a Netlify Function. PostgreSQL remains hosted by Supabase.
+Ardenvia Bank deploys to one Netlify site: Vite assets are served from `apps/web/dist`, and `/api/*` is rewritten to the Express application in a Netlify Function. PostgreSQL remains hosted by Supabase.
 
 ## 1. Prepare PostgreSQL
 

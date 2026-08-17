@@ -13,6 +13,8 @@ import {
 import { Link } from "react-router-dom";
 import type { BankTransaction } from "@clipx/contracts/banking";
 import { formatCurrency, formatDate } from "@/lib/banking";
+import { ListPagination } from "@/components/ListPagination";
+import { useState } from "react";
 
 const icons = {
   income: ArrowDownLeft,
@@ -26,6 +28,8 @@ const icons = {
 };
 
 export function TransactionList({ transactions, compact = false, detailsBasePath = "/activity" }: { transactions: BankTransaction[]; compact?: boolean; detailsBasePath?: string }) {
+  const [page,setPage]=useState(1);
+  const pageSize=compact?5:10;
   if (transactions.length === 0) {
     return (
       <div className="grid min-h-48 place-items-center rounded-2xl bg-muted/55 p-8 text-center">
@@ -38,9 +42,10 @@ export function TransactionList({ transactions, compact = false, detailsBasePath
     );
   }
 
+  const visible=transactions.slice((page-1)*pageSize,page*pageSize);
   return (
-    <div className="divide-y" data-motion-list>
-      {transactions.map((transaction) => {
+    <div><div className="divide-y" data-motion-list>
+      {visible.map((transaction) => {
         const Icon = icons[transaction.category];
         const isCredit = transaction.direction === "credit";
         return (
@@ -59,6 +64,6 @@ export function TransactionList({ transactions, compact = false, detailsBasePath
           </Link>
         );
       })}
-    </div>
+    </div><ListPagination page={page} pageSize={pageSize} total={transactions.length} onPageChange={setPage}/></div>
   );
 }

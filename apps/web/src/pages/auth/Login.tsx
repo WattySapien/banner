@@ -71,6 +71,7 @@ export default function LoginPage() {
           </label>
           <Input
             id="email"
+            data-testid="auth-email"
             type="email"
             placeholder="name@example.com"
             autoComplete="email"
@@ -90,6 +91,7 @@ export default function LoginPage() {
           </div>
           <PasswordInput
             id="password"
+            data-testid="auth-password"
             placeholder="••••••••"
             autoComplete="current-password"
             visibilityLabel="password"
@@ -98,7 +100,7 @@ export default function LoginPage() {
           />
         </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <Button type="submit" className="w-full" disabled={isLoading} data-testid="login-submit">
           {isLoading ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>

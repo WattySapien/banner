@@ -12,7 +12,9 @@ export function MotionController() {
 
   useGSAP(() => {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) return;
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    const lowPowerDevice = connection?.saveData === true || ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 2;
+    if (reducedMotion || lowPowerDevice) return;
 
     const applicationRoot = document.getElementById("root");
     if (!applicationRoot) return;

@@ -12,15 +12,17 @@ import { apiRequest } from "@/lib/api";
 import { formatCurrency } from "@/lib/banking";
 import { queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { ListPagination } from "@/components/ListPagination";
 
 type Filter = "all" | "active" | "inactive" | "admins";
 
 export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [page,setPage]=useState(1); const pageSize=10;
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { data: users = [], isLoading } = useQuery<AdminCustomer[]>({ queryKey: ["/api/admin/users"] });
+  const { data: users = [], isLoading } = useQuery<AdminCustomer[]>({ queryKey: ["/api/admin/users"], staleTime: 60_000, refetchOnMount: true });
 
   const updateUser = useMutation({
     mutationFn: ({ id, update }: { id: string; update: UpdateAdminUser }) => apiRequest(`/api/admin/users/${id}`, "PATCH", update) as Promise<AdminCustomer>,
@@ -55,9 +57,9 @@ export default function UserManagement() {
 
         {isLoading ? <UserListSkeleton /> : filteredUsers.length === 0 ? (
           <div className="px-6 py-16 text-center"><Search className="mx-auto size-6 text-muted-foreground" /><h2 className="mt-4 font-semibold">No matching customers</h2><p className="mt-1 text-sm text-muted-foreground">Adjust the search or account filter.</p></div>
-        ) : (
+        ) : <>
           <div className="divide-y">
-            {filteredUsers.map((user) => (
+            {filteredUsers.slice((page-1)*pageSize,page*pageSize).map((user) => (
               <article key={user.id} role="link" tabIndex={0} onClick={() => navigate(`/admin/users/${user.id}`)} onKeyDown={(event) => { if (event.key === "Enter") navigate(`/admin/users/${user.id}`); }} className="group grid cursor-pointer gap-5 p-4 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-5 lg:grid-cols-[minmax(16rem,1.2fr)_0.7fr_0.7fr_auto] lg:items-center">
                 <div className="flex min-w-0 items-center gap-3">
                   <ProfileAvatar src={user.profileImageUrl} initials={user.initials} alt={`${user.firstName} ${user.lastName} profile`} className="size-11"/>
@@ -75,8 +77,8 @@ export default function UserManagement() {
                 </div>
               </article>
             ))}
-          </div>
-        )}
+          </div><div className="p-4 sm:p-5"><ListPagination page={page} pageSize={pageSize} total={filteredUsers.length} onPageChange={setPage}/></div>
+        </>}
       </section>
       <p className="text-xs text-muted-foreground">{filteredUsers.length} of {users.length} accounts shown. Select a customer to review and edit the full account record.</p>
     </div>

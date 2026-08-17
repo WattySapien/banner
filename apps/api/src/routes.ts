@@ -5,6 +5,7 @@ import { accountNumberSchema, createInternalTransferSchema, createPeerTransferSc
 import { createAdminAccountSchema, createAdminCardSchema, createAdminCustomerSchema, updateAdminAccountSchema, updateAdminUserSchema } from "@clipx/contracts/admin";
 import { changePasswordSchema, updatePreferencesSchema, updateProfileSchema } from "@clipx/contracts/settings";
 import { localAuthSchema, localSignupSchema, type LocalAuthUser } from "@clipx/contracts/auth";
+import { supportMessageInputSchema } from "@clipx/contracts/support";
 import { config } from "./config.js";
 import { atStage } from "./diagnostics.js";
 import { isLocalRequest } from "./network-access.js";
@@ -63,7 +64,7 @@ export function registerRoutes(app:Express,storage:IStorage) {
   });
 
   app.get("/api/health",asyncRoute(async(_req,res)=>{await atStage("health.database.ping",()=>storage.ping());res.json({status:"ok",storage:storage.kind,timestamp:new Date().toISOString()});}));
-  app.get("/api",asyncRoute(async(_req,res)=>{res.json({name:"ClipX Banking API",status:"production-ready"});}));
+  app.get("/api",asyncRoute(async(_req,res)=>{res.json({name:"Ardenvia Bank Banking API",status:"production-ready"});}));
 
   app.post("/api/auth/local/signup",asyncRoute(async(req,res)=>{
     const {email,password,firstName,lastName}=localSignupSchema.parse(req.body);
@@ -106,20 +107,17 @@ export function registerRoutes(app:Express,storage:IStorage) {
 
   const assertAdmin=(req:AuthenticatedRequest)=>{assertLocalAdminRequest(req);if(!req.authUser.isAdmin) throw Object.assign(new Error("Administrator access required"),{status:403});};
   const adminOnly=(req:Request,_res:Response,next:NextFunction)=>{try{assertAdmin(req as AuthenticatedRequest);next();}catch(error){next(error);}};
+  const assertCustomerExists=async(userId:string)=>{if(!await storage.getUser(userId))throw Object.assign(new Error("Customer not found"),{status:404});};
 
   app.get("/api/auth/user",asyncRoute(async(req,res)=>{const user=await storage.getUser(req.authUser.id);if(!user){res.status(404).json({message:"User not found"});return;}res.json(user);}));
   app.get("/api/avatars/:userId",asyncRoute(async(req,res)=>{
     if(req.params.userId!==req.authUser.id)assertAdmin(req);
     const avatar=await storage.getUserAvatar(req.params.userId);
     if(!avatar)throw Object.assign(new Error("Profile image not found"),{status:404});
-    const etag=`"${createHash("sha256").update(avatar.data).digest("base64url")}"`;
-    res.setHeader("Cache-Control","private, max-age=300");
+    res.setHeader("Cache-Control","private, no-cache, must-revalidate");
     res.setHeader("Content-Type",avatar.contentType);
     res.setHeader("Content-Length",avatar.data.byteLength);
-    res.setHeader("ETag",etag);
-    res.setHeader("Last-Modified",new Date(avatar.updatedAt).toUTCString());
-    if(req.header("if-none-match")===etag){res.status(304).end();return;}
-    res.send(avatar.data);
+    res.end(avatar.data);
   }));
   app.put("/api/settings/avatar",avatarBodyParser,asyncRoute(async(req,res)=>{
     res.json(await storage.updateUserAvatar(req.authUser.id,readAvatarUpload(req)));
@@ -134,6 +132,9 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.get("/api/notifications",asyncRoute(async(req,res)=>{res.json(await storage.getNotifications(req.authUser.id));}));
   app.patch("/api/notifications/read-all",asyncRoute(async(req,res)=>{await storage.markAllNotificationsRead(req.authUser.id);res.status(204).end();}));
   app.patch("/api/notifications/:notificationId/read",asyncRoute(async(req,res)=>{res.json(await storage.markNotificationRead(req.authUser.id,req.params.notificationId));}));
+  app.get("/api/support/messages",asyncRoute(async(req,res)=>{res.json(await storage.getSupportMessages(req.authUser.id,"customer"));}));
+  app.post("/api/support/messages",asyncRoute(async(req,res)=>{const {body}=supportMessageInputSchema.parse(req.body);res.status(201).json(await storage.createSupportMessage(req.authUser.id,req.authUser.id,"customer",body));}));
+  app.patch("/api/support/messages/read",asyncRoute(async(req,res)=>{await storage.markSupportMessagesRead(req.authUser.id,"customer");res.status(204).end();}));
   app.get("/api/beneficiaries",asyncRoute(async(req,res)=>{res.json(await storage.getBeneficiaries(req.authUser.id));}));
   app.post("/api/transfers",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createTransfer(req.authUser.id,createTransferSchema.parse(req.body)));}));
   app.post("/api/transfers/internal",asyncRoute(async(req,res)=>{res.status(201).json(await storage.createInternalTransfer(req.authUser.id,createInternalTransferSchema.parse(req.body)));}));
@@ -151,10 +152,15 @@ export function registerRoutes(app:Express,storage:IStorage) {
   app.get("/api/admin/users/:userId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminUserDetails(req.params.userId));}));
   app.patch("/api/admin/users/:userId",asyncRoute(async(req,res)=>{assertAdmin(req);const update=updateAdminUserSchema.parse(req.body);if(req.params.userId===req.authUser.id&&update.isActive===false)throw Object.assign(new Error("You cannot suspend your own administrator account"),{status:422});if(req.params.userId===req.authUser.id&&update.isAdmin===false)throw Object.assign(new Error("You cannot remove your own administrator access"),{status:422});res.json(await storage.updateAdminUser(req.params.userId,update));}));
   app.put("/api/admin/users/:userId/avatar",adminOnly,avatarBodyParser,asyncRoute(async(req,res)=>{await storage.updateUserAvatar(req.params.userId,readAvatarUpload(req));res.json((await storage.getAdminUserDetails(req.params.userId)).customer);}));
+  app.get("/api/admin/users/:userId/support/messages",asyncRoute(async(req,res)=>{assertAdmin(req);await assertCustomerExists(req.params.userId);res.json(await storage.getSupportMessages(req.params.userId,"admin"));}));
+  app.post("/api/admin/users/:userId/support/messages",asyncRoute(async(req,res)=>{assertAdmin(req);const {body}=supportMessageInputSchema.parse(req.body);res.status(201).json(await storage.createSupportMessage(req.params.userId,req.authUser.id,"admin",body));}));
+  app.patch("/api/admin/users/:userId/support/messages/read",asyncRoute(async(req,res)=>{assertAdmin(req);await assertCustomerExists(req.params.userId);await storage.markSupportMessagesRead(req.params.userId,"admin");res.status(204).end();}));
   app.post("/api/admin/users/:userId/accounts",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminAccount(req.params.userId,createAdminAccountSchema.parse(req.body)));}));
   app.patch("/api/admin/users/:userId/accounts/:accountId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.updateAdminAccount(req.params.userId,req.params.accountId,updateAdminAccountSchema.parse(req.body)));}));
   app.post("/api/admin/users/:userId/accounts/:accountId/number",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.assignAdminAccountNumber(req.params.userId,req.params.accountId));}));
   app.post("/api/admin/users/:userId/cards",asyncRoute(async(req,res)=>{assertAdmin(req);res.status(201).json(await storage.createAdminCard(req.params.userId,createAdminCardSchema.parse(req.body)));}));
+  app.patch("/api/admin/users/:userId/cards/:cardId/revoke",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.revokeAdminCard(req.params.userId,req.params.cardId));}));
+  app.delete("/api/admin/users/:userId/cards/:cardId",asyncRoute(async(req,res)=>{assertAdmin(req);await storage.deleteAdminCard(req.params.userId,req.params.cardId);res.status(204).end();}));
   app.get("/api/admin/transactions",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminTransactions());}));
   app.get("/api/admin/transactions/:transactionId",asyncRoute(async(req,res)=>{assertAdmin(req);res.json(await storage.getAdminTransaction(req.params.transactionId));}));
 

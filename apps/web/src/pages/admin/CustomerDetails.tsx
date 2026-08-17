@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CalendarDays, Camera, CreditCard, Hash, LoaderCircle, Mail, PencilLine, Plus, UserRound, WalletCards, X } from "lucide-react";
+import { ArrowLeft, Ban, CalendarDays, Camera, Check, Copy, CreditCard, Hash, LoaderCircle, Mail, MessageCircle, PencilLine, Plus, Trash2, UserRound, WalletCards, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import type { AdminCustomer, AdminCustomerDetails, CreateAdminAccount, CreateAdminCard, UpdateAdminAccount, UpdateAdminUser } from "@clipx/contracts/admin";
 import type { Account, BankCard } from "@clipx/contracts/banking";
@@ -25,6 +25,7 @@ export default function CustomerDetails() {
   const [isActive, setIsActive] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const avatarInput = useRef<HTMLInputElement>(null);
+  const [avatarProgress, setAvatarProgress] = useState(0);
 
   useEffect(() => {
     if (!data) return;
@@ -48,14 +49,15 @@ export default function CustomerDetails() {
   });
 
   const avatarMutation = useMutation({
-    mutationFn: (file: File) => uploadAdminAvatar(userId, file) as Promise<AdminCustomer>,
+    mutationFn: (file: File) => uploadAdminAvatar(userId, file, setAvatarProgress) as Promise<AdminCustomer>,
     onSuccess: (customer) => {
       queryClient.setQueryData<AdminCustomerDetails>([`/api/admin/users/${userId}`], (current) => current ? { ...current, customer } : current);
       queryClient.setQueryData<AdminCustomer[]>(["/api/admin/users"], (current = []) => current.map((item) => item.id === customer.id ? customer : item));
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      setAvatarProgress(0);
       toast({ title: "Profile image updated", description: `${customer.firstName || customer.email}'s image now appears across their account.` });
     },
-    onError: (uploadError: Error) => toast({ title: "Image upload failed", description: uploadError.message, variant: "destructive" }),
+    onError: (uploadError: Error) => { setAvatarProgress(0); toast({ title: "Image upload failed", description: uploadError.message, variant: "destructive" }); },
   });
 
   const chooseAvatar = (file?: File) => {
@@ -80,10 +82,11 @@ export default function CustomerDetails() {
     <div className="space-y-6 sm:space-y-8">
       <header>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-center gap-4"><ProfileAvatar src={customer.profileImageUrl} initials={customer.initials} alt={`${customer.firstName} ${customer.lastName} profile`} className="size-14 rounded-2xl"/><div><p className="text-sm text-muted-foreground">Customer record</p><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">{customer.firstName} {customer.lastName}</h1><p className="mt-1 text-sm text-muted-foreground">{customer.email}</p></div></div>
+          <div className="flex items-center gap-4"><ProfileAvatar src={customer.profileImageUrl} userId={customer.id} initials={customer.initials} alt={`${customer.firstName} ${customer.lastName} profile`} className="size-14 rounded-2xl"/><div><p className="text-sm text-muted-foreground">Customer record</p><h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">{customer.firstName} {customer.lastName}</h1><p className="mt-1 text-sm text-muted-foreground">{customer.email}</p></div></div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => { chooseAvatar(event.target.files?.[0]); event.currentTarget.value = ""; }} aria-label={`Choose profile image for ${customer.firstName} ${customer.lastName}`} />
-            <Button type="button" variant="outline" size="sm" className="flex-1 sm:flex-none" disabled={avatarMutation.isPending} onClick={() => avatarInput.current?.click()}>{avatarMutation.isPending ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Camera className="mr-2 size-4" />}{avatarMutation.isPending ? "Uploading…" : customer.profileImageUrl ? "Replace photo" : "Upload photo"}</Button>
+            <Button type="button" variant="outline" size="sm" className="flex-1 sm:flex-none" disabled={avatarMutation.isPending} onClick={() => avatarInput.current?.click()}>{avatarMutation.isPending ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <Camera className="mr-2 size-4" />}{avatarMutation.isPending ? `Uploading ${avatarProgress}%` : customer.profileImageUrl ? "Replace photo" : "Upload photo"}</Button>
+            <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none"><Link to={`/admin/users/${userId}/communications`}><MessageCircle className="mr-2 size-4"/>Communications</Link></Button>
             <span className={`w-fit rounded-md px-2.5 py-1.5 text-xs font-medium ${customer.isActive ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>{customer.isActive ? "Active account" : "Suspended account"}</span>
           </div>
         </div>
@@ -176,6 +179,19 @@ function AccountEditor({userId,account}:{userId:string;account:Account}){
   const [isEditing,setIsEditing]=useState(false);
   const [type,setType]=useState<Account["type"]>(account.type);
   const [maskedNumber,setMaskedNumber]=useState(account.maskedNumber);
+  const [copied,setCopied]=useState(false);
+
+  const copyAccountNumber=async()=>{
+    if(!account.accountNumber)return;
+    try{
+      await navigator.clipboard.writeText(account.accountNumber);
+      setCopied(true);
+      window.setTimeout(()=>setCopied(false),1800);
+      toast({title:"Account number copied",description:"It is ready to paste."});
+    }catch{
+      toast({title:"Could not copy account number",description:"Copy permission was denied by the browser.",variant:"destructive"});
+    }
+  };
 
   const update=useMutation({
     mutationFn:(input:UpdateAdminAccount)=>apiRequest(`/api/admin/users/${userId}/accounts/${account.id}`,"PATCH",input) as Promise<Account>,
@@ -209,7 +225,7 @@ function AccountEditor({userId,account}:{userId:string;account:Account}){
       <div className="rounded-xl bg-background p-3"><p className="text-xs text-muted-foreground">Account holder</p><p className="mt-1 text-sm font-semibold">{account.name}</p></div>
       <div className="grid grid-cols-2 gap-3"><div><Label htmlFor={`accountType-${account.id}`}>Type</Label><select id={`accountType-${account.id}`} value={type} onChange={(event)=>setType(event.target.value as Account["type"])} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm"><option value="checking">Checking</option><option value="savings">Savings</option></select></div><div><Label htmlFor={`accountDigits-${account.id}`}>{account.accountNumber?"Final four (locked)":"Final four"}</Label><Input id={`accountDigits-${account.id}`} className="mt-2 font-mono" inputMode="numeric" maxLength={4} pattern="\d{4}" value={maskedNumber} onChange={(event)=>setMaskedNumber(event.target.value.replace(/\D/g,"").slice(0,4))} disabled={Boolean(account.accountNumber)} required/></div></div>
       <div className="flex gap-2"><Button type="submit" size="sm" disabled={!canSave||update.isPending}>{update.isPending?"Saving…":"Save account"}</Button><Button type="button" size="sm" variant="ghost" onClick={cancel} disabled={update.isPending}>Cancel</Button></div>
-    </form>:<div><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{account.name}</p><span className="rounded-md bg-background px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">{account.type}</span></div><div className="mt-2 flex items-center gap-1.5"><Hash className="size-3.5 text-primary"/><p className="font-mono text-sm font-medium tracking-[0.08em] tabular-nums">{formatAccountNumber(account.accountNumber,account.maskedNumber)}</p></div>{!account.accountNumber&&<p className="mt-1 text-xs text-muted-foreground">Permanent account number pending</p>}</div><div className="text-right"><p className="font-mono text-sm font-semibold tabular-nums">{formatCurrency(account.balance)}</p><div className="mt-2 flex flex-wrap justify-end gap-1">{!account.accountNumber&&<Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={confirmAssignment} disabled={assignNumber.isPending}><Hash className="mr-1.5 size-3.5"/>{assignNumber.isPending?"Assigning…":"Assign number"}</Button>}<Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={()=>setIsEditing(true)} disabled={assignNumber.isPending}><PencilLine className="mr-1.5 size-3.5"/>Edit</Button></div></div></div></div>}
+    </form>:<div><div className="flex items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{account.name}</p><span className="rounded-md bg-background px-2 py-0.5 text-[11px] font-medium capitalize text-muted-foreground">{account.type}</span></div><div className="mt-2 flex items-center gap-1.5"><Hash className="size-3.5 text-primary"/><p className="font-mono text-sm font-medium tracking-[0.08em] tabular-nums">{formatAccountNumber(account.accountNumber,account.maskedNumber)}</p>{account.accountNumber&&<button type="button" onClick={copyAccountNumber} className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Copy full account number for ${account.name}`}>{copied?<Check className="size-3.5 text-primary"/>:<Copy className="size-3.5"/>}</button>}</div>{!account.accountNumber&&<p className="mt-1 text-xs text-muted-foreground">Permanent account number pending</p>}</div><div className="text-right"><p className="font-mono text-sm font-semibold tabular-nums">{formatCurrency(account.balance)}</p><div className="mt-2 flex flex-wrap justify-end gap-1">{!account.accountNumber&&<Button type="button" variant="outline" size="sm" className="h-8 px-2" onClick={confirmAssignment} disabled={assignNumber.isPending}><Hash className="mr-1.5 size-3.5"/>{assignNumber.isPending?"Assigning…":"Assign number"}</Button>}<Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={()=>setIsEditing(true)} disabled={assignNumber.isPending}><PencilLine className="mr-1.5 size-3.5"/>Edit</Button></div></div></div></div>}
   </article>;
 }
 
@@ -217,6 +233,7 @@ function CardManager({userId,accounts,cards}:{userId:string;accounts:Account[];c
   const {toast}=useToast();
   const [isAdding,setIsAdding]=useState(false);
   const [accountId,setAccountId]=useState(accounts[0]?.id??"");
+  const [network,setNetwork]=useState<CreateAdminCard["network"]>("Mastercard");
   const [type,setType]=useState<CreateAdminCard["type"]>("virtual");
   const [status,setStatus]=useState<CreateAdminCard["status"]>("active");
   const [spendingLimit,setSpendingLimit]=useState("2500");
@@ -227,24 +244,36 @@ function CardManager({userId,accounts,cards}:{userId:string;accounts:Account[];c
     mutationFn:(input:CreateAdminCard)=>apiRequest(`/api/admin/users/${userId}/cards`,"POST",input) as Promise<BankCard>,
     onSuccess:(card)=>{
       queryClient.setQueryData<AdminCustomerDetails>([`/api/admin/users/${userId}`],(current)=>current?{...current,cards:[...current.cards,card]}:current);
-      setIsAdding(false);setType("virtual");setStatus("active");setSpendingLimit("2500");
-      toast({title:"Card issued",description:`Visa ending in ${card.lastFour} was created and the customer was notified.`});
+      setIsAdding(false);setNetwork("Mastercard");setType("virtual");setStatus("active");setSpendingLimit("2500");
+      toast({title:"Card issued",description:`${card.network} ending in ${card.lastFour} was created and the customer was notified.`});
     },
     onError:(error:Error)=>toast({title:"Card issuance failed",description:error.message,variant:"destructive"}),
+  });
+
+  const updateCards=(updater:(current:BankCard[])=>BankCard[])=>queryClient.setQueryData<AdminCustomerDetails>([`/api/admin/users/${userId}`],(current)=>current?{...current,cards:updater(current.cards)}:current);
+  const revoke=useMutation({
+    mutationFn:(cardId:string)=>apiRequest(`/api/admin/users/${userId}/cards/${cardId}/revoke`,"PATCH") as Promise<BankCard>,
+    onSuccess:(updated)=>{updateCards((current)=>current.map((card)=>card.id===updated.id?updated:card));toast({title:"Card revoked",description:`${updated.network} ending in ${updated.lastFour} is now frozen.`});},
+    onError:(error:Error)=>toast({title:"Card revocation failed",description:error.message,variant:"destructive"}),
+  });
+  const remove=useMutation({
+    mutationFn:(cardId:string)=>apiRequest(`/api/admin/users/${userId}/cards/${cardId}`,"DELETE"),
+    onSuccess:(_,cardId)=>{updateCards((current)=>current.filter((card)=>card.id!==cardId));toast({title:"Card deleted",description:"The card and its issuance notification were permanently removed."});},
+    onError:(error:Error)=>toast({title:"Card deletion failed",description:error.message,variant:"destructive"}),
   });
 
   const parsedLimit=Number(spendingLimit);
   const canCreate=Boolean(accountId)&&Number.isFinite(parsedLimit)&&parsedLimit>=100&&parsedLimit<=25_000;
   return <section className="rounded-2xl bg-muted/55 p-6">
-    <div className="flex items-center justify-between gap-4"><div><h2 className="font-semibold">Payment cards</h2><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Issue a Visa-formatted card tied to one customer account.</p></div><Button type="button" size="sm" variant={isAdding?"ghost":"outline"} onClick={()=>setIsAdding((value)=>!value)} disabled={accounts.length===0}>{isAdding?<><X className="mr-2 size-4"/>Cancel</>:<><Plus className="mr-2 size-4"/>Issue card</>}</Button></div>
+    <div className="flex items-center justify-between gap-4"><div><h2 className="font-semibold">Payment cards</h2><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Issue a Visa or Mastercard tied to one customer account.</p></div><Button type="button" size="sm" variant={isAdding?"ghost":"outline"} onClick={()=>setIsAdding((value)=>!value)} disabled={accounts.length===0}>{isAdding?<><X className="mr-2 size-4"/>Cancel</>:<><Plus className="mr-2 size-4"/>Issue card</>}</Button></div>
     {accounts.length===0&&<p className="mt-4 rounded-xl bg-card p-4 text-xs text-muted-foreground">Open a bank account before issuing a card.</p>}
-    {isAdding&&<form onSubmit={(event)=>{event.preventDefault();if(canCreate)create.mutate({accountId,type,status,spendingLimit:parsedLimit});}} className="mt-5 space-y-4 rounded-xl bg-card p-4 ring-1 ring-foreground/[0.06]">
+    {isAdding&&<form onSubmit={(event)=>{event.preventDefault();if(canCreate)create.mutate({accountId,network,type,status,spendingLimit:parsedLimit});}} className="mt-5 space-y-4 rounded-xl bg-card p-4 ring-1 ring-foreground/[0.06]">
       <div><Label htmlFor="cardAccount">Linked account</Label><select id="cardAccount" value={accountId} onChange={(event)=>setAccountId(event.target.value)} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm">{accounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {account.type}</option>)}</select></div>
-      <div className="grid grid-cols-2 gap-3"><div><Label htmlFor="cardType">Card type</Label><select id="cardType" value={type} onChange={(event)=>setType(event.target.value as CreateAdminCard["type"])} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm"><option value="virtual">Virtual</option><option value="physical">Physical</option></select></div><div><Label htmlFor="cardStatus">Initial status</Label><select id="cardStatus" value={status} onChange={(event)=>setStatus(event.target.value as CreateAdminCard["status"])} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm"><option value="active">Active</option><option value="frozen">Frozen</option></select></div></div>
+      <div className="grid gap-3 sm:grid-cols-3"><div><Label htmlFor="cardNetwork">Card network</Label><select id="cardNetwork" value={network} onChange={(event)=>setNetwork(event.target.value as CreateAdminCard["network"])} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm"><option value="Mastercard">Mastercard</option><option value="Visa">Visa</option></select></div><div><Label htmlFor="cardType">Card type</Label><select id="cardType" value={type} onChange={(event)=>setType(event.target.value as CreateAdminCard["type"])} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm"><option value="virtual">Virtual</option><option value="physical">Physical</option></select></div><div><Label htmlFor="cardStatus">Initial status</Label><select id="cardStatus" value={status} onChange={(event)=>setStatus(event.target.value as CreateAdminCard["status"])} className="mt-2 flex h-11 w-full rounded-md border border-input bg-background px-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring md:h-10 md:text-sm"><option value="active">Active</option><option value="frozen">Frozen</option></select></div></div>
       <div><Label htmlFor="cardLimit">Spending limit</Label><Input id="cardLimit" className="mt-2 font-mono" type="number" inputMode="decimal" min="100" max="25000" step="0.01" value={spendingLimit} onChange={(event)=>setSpendingLimit(event.target.value)} required/><p className="mt-2 text-xs text-muted-foreground">The server generates the number, expiration, and protected card data.</p></div>
       <Button type="submit" className="w-full" disabled={!canCreate||create.isPending}>{create.isPending?"Issuing card…":"Issue and notify customer"}</Button>
     </form>}
-    <div className="mt-5 space-y-2">{cards.length===0?<p className="rounded-xl bg-card p-4 text-xs text-muted-foreground">No cards issued to this customer.</p>:cards.map((card)=><div key={card.id} className="flex items-center gap-3 rounded-xl bg-card p-3"><div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary"><CreditCard className="size-4" strokeWidth={1.7}/></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold capitalize">{card.type} Visa</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">•••• {card.lastFour} · {card.expires}</p></div><span className="text-[11px] font-medium capitalize text-muted-foreground">{card.status}</span></div>)}</div>
+    <div className="mt-5 space-y-2">{cards.length===0?<p className="rounded-xl bg-card p-4 text-xs text-muted-foreground">No cards issued to this customer.</p>:cards.map((card)=><div key={card.id} className="flex flex-wrap items-center gap-3 rounded-xl bg-card p-3"><div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary"><CreditCard className="size-4" strokeWidth={1.7}/></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold capitalize">{card.type} {card.network}</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">•••• {card.lastFour} · {card.expires}</p></div><span className="text-[11px] font-medium capitalize text-muted-foreground">{card.status}</span><div className="flex items-center gap-2"><Button type="button" size="sm" variant="outline" disabled={revoke.isPending||remove.isPending||card.status==="frozen"} onClick={()=>{if(window.confirm(`Revoke ${card.network} ending in ${card.lastFour}? The customer will no longer be able to use it.`))revoke.mutate(card.id);}}><Ban className="mr-1.5 size-3.5"/>{card.status==="frozen"?"Revoked":"Revoke"}</Button><Button type="button" size="sm" variant="destructive" disabled={revoke.isPending||remove.isPending} onClick={()=>{if(window.confirm(`Permanently delete ${card.network} ending in ${card.lastFour}? This cannot be undone.`))remove.mutate(card.id);}}><Trash2 className="mr-1.5 size-3.5"/>Delete</Button></div></div>)}</div>
   </section>;
 }
 

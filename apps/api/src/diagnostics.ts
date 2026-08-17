@@ -31,6 +31,7 @@ export function classifyError(error: unknown): ErrorDiagnostic {
   const code = errorCode(error);
 
   if (code === "23505") return { status: 409, code: "RECORD_CONFLICT", message: "A record with those details already exists", stage };
+  if (code === "23514") return { status: 503, code: "DATABASE_SCHEMA_OUTDATED", message: "The database schema is outdated; run the latest database migrations", stage };
   if (code === "28P01") return { status: 503, code: "DATABASE_AUTH_FAILED", message: "Database authentication failed", stage };
   if (code === "42P01" || code === "42703") return { status: 503, code: "DATABASE_SCHEMA_MISSING", message: "Database schema is not initialized", stage };
   if (code === "CONNECT_TIMEOUT" || code === "ETIMEDOUT") return { status: 503, code: "DATABASE_TIMEOUT", message: "Database connection timed out", stage };

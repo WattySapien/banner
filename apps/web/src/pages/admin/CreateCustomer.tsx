@@ -65,7 +65,7 @@ export default function CreateCustomer() {
       <form onSubmit={submit} className="grid gap-6 xl:grid-cols-[1fr_0.72fr]">
         <div className="space-y-6">
           <section className="rounded-2xl border bg-card p-5 sm:p-7">
-            <div className="flex gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><UserPlus className="size-5"/></div><div><h2 className="font-semibold">Customer identity</h2><p className="mt-1 text-sm text-muted-foreground">Core information used throughout ClipX.</p></div></div>
+            <div className="flex gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"><UserPlus className="size-5"/></div><div><h2 className="font-semibold">Customer identity</h2><p className="mt-1 text-sm text-muted-foreground">Core information used throughout Ardenvia Bank.</p></div></div>
             <div className="mt-7 grid gap-5 sm:grid-cols-2">
               <div><Label htmlFor="newFirstName">First name</Label><Input id="newFirstName" value={firstName} onChange={(event) => setFirstName(event.target.value)} className="mt-2" autoComplete="off" required /></div>
               <div><Label htmlFor="newLastName">Last name <span className="text-muted-foreground">(optional)</span></Label><Input id="newLastName" value={lastName} onChange={(event) => setLastName(event.target.value)} className="mt-2" autoComplete="off" /></div>

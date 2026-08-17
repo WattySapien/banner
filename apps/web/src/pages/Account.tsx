@@ -27,6 +27,7 @@ export default function Account() {
   const [newPassword,setNewPassword]=useState("");
   const [confirmPassword,setConfirmPassword]=useState("");
   const avatarInput=useRef<HTMLInputElement>(null);
+  const [avatarProgress,setAvatarProgress]=useState(0);
 
   useEffect(() => {
     if (!settings) return;
@@ -51,14 +52,15 @@ export default function Account() {
   });
 
   const avatarMutation=useMutation({
-    mutationFn:(file:File)=>uploadAvatar(file) as Promise<User>,
+    mutationFn:(file:File)=>uploadAvatar(file,setAvatarProgress) as Promise<User>,
     onSuccess:(user)=>{
       queryClient.setQueryData<User>(["/api/auth/user"],user);
       queryClient.setQueryData<AccountSettings>(["/api/settings"],(current)=>current?{...current,profile:{...current.profile,profileImageUrl:user.profileImageUrl}}:current);
       queryClient.invalidateQueries({queryKey:["/api/admin/users"]});
+      setAvatarProgress(0);
       toast({title:"Profile image updated",description:"Your new image now appears across your account."});
     },
-    onError:(error:Error)=>toast({title:"Image upload failed",description:error.message,variant:"destructive"}),
+    onError:(error:Error)=>{setAvatarProgress(0);toast({title:"Image upload failed",description:error.message,variant:"destructive"});},
   });
 
   const chooseAvatar=(file?:File)=>{
@@ -95,7 +97,7 @@ export default function Account() {
               <ProfileAvatar src={settings.profile.profileImageUrl} initials={`${settings.profile.firstName[0]??""}${settings.profile.lastName[0]??""}`||"CX"} alt={`${settings.profile.firstName} ${settings.profile.lastName} profile`} className="size-16"/>
               <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Profile image</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">JPEG, PNG, or WebP. Maximum file size 2 MB.</p></div>
               <input ref={avatarInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event)=>{chooseAvatar(event.target.files?.[0]);event.currentTarget.value="";}} aria-label="Choose profile image"/>
-              <Button className="w-full sm:w-auto" type="button" variant="outline" size="sm" disabled={avatarMutation.isPending} onClick={()=>avatarInput.current?.click()}>{avatarMutation.isPending?<LoaderCircle className="mr-2 size-4 animate-spin"/>:<Camera className="mr-2 size-4"/>}{avatarMutation.isPending?"Uploading…":settings.profile.profileImageUrl?"Replace image":"Upload image"}</Button>
+              <Button className="w-full sm:w-auto" type="button" variant="outline" size="sm" disabled={avatarMutation.isPending} onClick={()=>avatarInput.current?.click()}>{avatarMutation.isPending?<LoaderCircle className="mr-2 size-4 animate-spin"/>:<Camera className="mr-2 size-4"/>}{avatarMutation.isPending?`Uploading ${avatarProgress}%`:settings.profile.profileImageUrl?"Replace image":"Upload image"}</Button>
             </div>
             <div className="mt-7 grid gap-5 sm:grid-cols-2"><div><Label htmlFor="firstName">First name</Label><Input id="firstName" className="mt-2" value={firstName} onChange={(event) => setFirstName(event.target.value)} /></div><div><Label htmlFor="lastName">Last name</Label><Input id="lastName" className="mt-2" value={lastName} onChange={(event) => setLastName(event.target.value)} /></div><div className="sm:col-span-2"><Label htmlFor="email">Email address</Label><Input id="email" className="mt-2" value={settings.profile.email} disabled /><p className="mt-2 text-xs text-muted-foreground">Contact support to change the email tied to your account.</p></div></div>
             <Button className="mt-6 w-full sm:w-auto" disabled={!firstName.trim() || !lastName.trim() || profileMutation.isPending} onClick={() => profileMutation.mutate({ firstName, lastName })}>{profileMutation.isPending ? "Saving…" : "Save profile"}</Button>

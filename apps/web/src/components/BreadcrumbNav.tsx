@@ -22,6 +22,7 @@ const adminTrail=(pathname:string):Breadcrumb[]=>{
   if(pathname==="/admin")return[{label:"Overview"}];
   if(pathname==="/admin/users")return[overview,{label:"Customers"}];
   if(pathname==="/admin/users/new")return[overview,customers,{label:"Add customer"}];
+  if(pathname.endsWith("/communications")&&pathname.startsWith("/admin/users/"))return[overview,customers,{label:"Customer record",to:pathname.replace(/\/communications$/,"")},{label:"Communications"}];
   if(pathname.startsWith("/admin/users/"))return[overview,customers,{label:"Customer record"}];
   if(pathname==="/admin/transactions")return[overview,{label:"Transactions"}];
   if(pathname.startsWith("/admin/transactions/"))return[overview,transactions,{label:"Transaction details"}];

@@ -9,11 +9,12 @@ type ThemeContextValue = {
   setPreference: (preference: ThemePreference) => void;
 };
 
-const STORAGE_KEY = "clipx-theme";
+const STORAGE_KEY = "ardenvia-bank-theme";
+const LEGACY_STORAGE_KEY = "clipx-theme";
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 function readPreference(): ThemePreference {
-  const stored = window.localStorage.getItem(STORAGE_KEY);
+  const stored = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
   return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
 }
 

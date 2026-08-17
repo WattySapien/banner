@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
+import compression from "compression";
 import { config } from "./config.js";
 import { classifyError, errorType } from "./diagnostics.js";
 import { logEvent } from "./logger.js";
@@ -10,6 +11,14 @@ import { storage as postgresStorage,type IStorage } from "./storage.js";
 export function createApp(storage:IStorage=postgresStorage) {
   const app = express();
   app.disable("x-powered-by");
+  // Netlify Dev's proxy can attempt to revalidate Express-generated ETags
+  // after the function response has already ended. Function responses use
+  // explicit cache-busting URLs, so disable automatic ETag negotiation.
+  app.disable("etag");
+  // Netlify's edge proxy compresses function responses itself. Skipping the
+  // middleware there avoids double-encoding/binary response header races in
+  // `netlify dev`, while local/Vercel servers still compress JSON payloads.
+  app.use(compression({ threshold: 1024, filter: (req, res) => process.env.NETLIFY ? false : compression.filter(req, res) }));
   app.set("trust proxy", 1);
   app.use(cors({ origin: config.allowedOrigins, credentials: true, methods:["GET","POST","PUT","PATCH","OPTIONS"] }));
   app.use(express.json({ limit:"1mb" }));

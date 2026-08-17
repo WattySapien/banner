@@ -1,16 +1,18 @@
 import {useState} from "react";
 import {useMutation,useQuery} from "@tanstack/react-query";
-import {Bell,CheckCheck,CreditCard} from "lucide-react";
+import {Bell,CheckCheck,CreditCard,MessageCircle} from "lucide-react";
 import {useNavigate} from "react-router-dom";
 import type {AppNotification} from "@clipx/contracts/banking";
 import {Button} from "@/components/ui/button";
 import {Popover,PopoverContent,PopoverTrigger} from "@/components/ui/popover";
 import {apiRequest} from "@/lib/api";
 import {queryClient} from "@/lib/queryClient";
+import {useAuth} from "@/contexts/AuthContext";
 
 export function NotificationCenter(){
   const [open,setOpen]=useState(false);
   const navigate=useNavigate();
+  const {user}=useAuth();
   const {data:notifications=[],isLoading}=useQuery<AppNotification[]>({queryKey:["/api/notifications"],staleTime:10_000,refetchInterval:15_000,refetchIntervalInBackground:false});
   const unreadCount=notifications.filter((notification)=>!notification.isRead).length;
   const readOne=useMutation({
@@ -25,6 +27,7 @@ export function NotificationCenter(){
     if(!notification.isRead)readOne.mutate(notification.id);
     setOpen(false);
     if(notification.type==="card_issued")navigate("/cards");
+    if(notification.type==="support_message")navigate(user?.isAdmin?`/admin/users/${notification.resourceId}/communications`:"/dashboard");
   };
 
   return <Popover open={open} onOpenChange={setOpen}>
@@ -41,7 +44,7 @@ export function NotificationCenter(){
       </div>
       <div className="max-h-[min(26rem,65dvh)] overflow-y-auto overscroll-contain">
         {isLoading?<NotificationSkeleton/>:notifications.length===0?<div className="px-6 py-10 text-center"><div className="mx-auto grid size-11 place-items-center rounded-xl bg-muted"><Bell className="size-5 text-muted-foreground"/></div><p className="mt-4 text-sm font-semibold">No notifications yet</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Card and account updates will appear here.</p></div>:notifications.map((notification)=><button key={notification.id} type="button" onClick={()=>openNotification(notification)} className="relative flex min-h-[4.75rem] w-full items-start gap-3 border-b px-4 py-3.5 text-left transition-colors last:border-0 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:bg-muted/70">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><CreditCard className="size-[18px]" strokeWidth={1.8}/></span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">{notification.type==="support_message"?<MessageCircle className="size-[18px]" strokeWidth={1.8}/>:<CreditCard className="size-[18px]" strokeWidth={1.8}/>}</span>
           <span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-3"><span className="text-sm font-semibold leading-5">{notification.title}</span><span className="shrink-0 text-[10px] text-muted-foreground">{relativeTime(notification.createdAt)}</span></span><span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{notification.message}</span></span>
           {!notification.isRead&&<span className="absolute left-1.5 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-primary" aria-label="Unread"/>}
         </button>)}

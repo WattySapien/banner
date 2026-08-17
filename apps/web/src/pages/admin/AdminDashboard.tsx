@@ -22,7 +22,7 @@ export default function AdminDashboard() {
         <div>
           <p className="text-sm text-muted-foreground">Banking operations</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Control room</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">Monitor customer access, money movement, and the health of the ClipX development environment.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">Monitor customer access, money movement, and the health of the Ardenvia Bank development environment.</p>
         </div>
         <div className="flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
           <CircleCheck className="size-4" />All systems operational

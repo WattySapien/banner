@@ -27,6 +27,7 @@ const TransactionMonitor=lazy(()=>import("@/pages/admin/TransactionMonitor"));
 const AdminTransactionDetails=lazy(()=>import("@/pages/admin/AdminTransactionDetails"));
 const CustomerDetails=lazy(()=>import("@/pages/admin/CustomerDetails"));
 const CreateCustomer=lazy(()=>import("@/pages/admin/CreateCustomer"));
+const CustomerCommunications=lazy(()=>import("@/pages/admin/CustomerCommunications"));
 const MotionExperience=lazy(()=>import("@/components/MotionExperience"));
 
 function ProtectedBankingRoute({ children }: { children: React.ReactNode }) {
@@ -88,6 +89,7 @@ function BankingRoutes() {
       <Route path="/admin/users" element={<ProtectedAdminRoute><UserManagement /></ProtectedAdminRoute>} />
       <Route path="/admin/users/new" element={<ProtectedAdminRoute><CreateCustomer /></ProtectedAdminRoute>} />
       <Route path="/admin/users/:userId" element={<ProtectedAdminRoute><CustomerDetails /></ProtectedAdminRoute>} />
+      <Route path="/admin/users/:userId/communications" element={<ProtectedAdminRoute><CustomerCommunications /></ProtectedAdminRoute>} />
       <Route path="/admin/transactions" element={<ProtectedAdminRoute><TransactionMonitor /></ProtectedAdminRoute>} />
       <Route path="/admin/transactions/:transactionId" element={<ProtectedAdminRoute><AdminTransactionDetails /></ProtectedAdminRoute>} />
       <Route path="/auth/login" element={<Navigate to="/login" replace />} />

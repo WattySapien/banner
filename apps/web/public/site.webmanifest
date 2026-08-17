@@ -1,0 +1,17 @@
+{
+  "name": "Ardenvia Bank",
+  "short_name": "Ardenvia",
+  "description": "Everyday banking, clearly.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f4fa",
+  "theme_color": "#7255d8",
+  "icons": [
+    {
+      "src": "/ardenvia-icon.svg",
+      "sizes": "96x96",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -17,7 +17,7 @@ export default function Dashboard() {
   const { data: overview, isLoading } = useQuery<BankingOverview>({ queryKey: ["/api/overview"] });
   const { data: transactions = [] } = useQuery<BankTransaction[]>({ queryKey: ["/api/transactions"] });
   const { data: cards = [] } = useQuery<BankCard[]>({ queryKey: ["/api/cards"], staleTime: 0, refetchOnMount: "always" });
-  const { data: accountUser } = useQuery<User>({ queryKey: ["/api/auth/user"] });
+  const { data: accountUser } = useQuery<User>({ queryKey: ["/api/auth/user"], staleTime: 15_000, refetchInterval: 30_000, refetchOnMount: true });
   const { data: settings } = useQuery<AccountSettings>({ queryKey: ["/api/settings"] });
 
   if (isLoading || !overview) return <DashboardSkeleton />;
@@ -25,6 +25,9 @@ export default function Dashboard() {
   const balancesVisible = settings?.preferences.showBalances !== false;
   const fullName = [accountUser?.firstName, accountUser?.lastName].filter(Boolean).join(" ") || "Account holder";
   const initials = `${accountUser?.firstName?.[0] ?? ""}${accountUser?.lastName?.[0] ?? ""}` || "CX";
+  const recentTransactions = transactions.length > 5 && transactions.some((item) => item.direction === "debit") && !transactions.slice(0, 5).some((item) => item.direction === "debit")
+    ? [...transactions.slice(0, 4), transactions.find((item) => item.direction === "debit")!]
+    : transactions.slice(0, 5);
 
   const copyAccountNumber = async (accountId: string, accountNumber: string) => {
     try {
@@ -44,8 +47,7 @@ export default function Dashboard() {
           <p className="text-xs font-medium text-primary">Overview</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">Welcome, {accountUser?.firstName ?? "there"}</h1>
         </div>
-        <ProfileAvatar src={accountUser?.profileImageUrl} initials={initials} alt={`${fullName} profile`} className="size-11 sm:hidden" />
-      </header>
+          </header>
 
       <section className="grid gap-4 lg:grid-cols-2" aria-label="Balance summary">
         <article className="rounded-2xl border bg-card p-5 shadow-[0_14px_40px_hsl(248_20%_12%/.045)] sm:p-6">
@@ -55,10 +57,13 @@ export default function Dashboard() {
               <p className="mt-2 truncate font-mono text-3xl font-semibold tracking-[-0.045em] tabular-nums sm:text-4xl">
                 {balancesVisible ? formatCurrency(overview.totalBalance) : "••••••"}
               </p>
-              <p className="mt-1.5 text-xs text-muted-foreground">{fullName}</p>
+            <div className="mt-2 flex items-center gap-2"><p className="truncate text-xs text-muted-foreground">{fullName}</p></div>
             </div>
-            <div className="grid size-11 place-items-center rounded-xl bg-accent text-primary">
-              <WalletCards className="size-5" strokeWidth={1.8} />
+            <div className="flex items-center gap-3">
+              <div className="grid size-11 place-items-center rounded-xl bg-accent text-primary">
+                <WalletCards className="size-5" strokeWidth={1.8} />
+              </div>
+              
             </div>
           </div>
 
@@ -120,7 +125,7 @@ export default function Dashboard() {
             </div>
             <Button asChild variant="ghost" size="sm"><Link to="/activity">See all<MoveUpRight className="size-3.5" /></Link></Button>
           </div>
-          <TransactionList transactions={transactions.slice(0, 5)} compact />
+          <TransactionList transactions={recentTransactions} compact />
         </article>
 
         <aside className="rounded-2xl border bg-card p-5 shadow-[0_14px_40px_hsl(248_20%_12%/.045)]">
@@ -138,7 +143,7 @@ export default function Dashboard() {
               <Link key={card.id} to="/cards" className="group block overflow-hidden rounded-xl border bg-gradient-to-br from-accent via-card to-secondary/50 p-4 transition-transform hover:-translate-y-0.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary"><CreditCard className="size-4" /></div>
-                  <span className="text-base font-bold italic tracking-[-0.08em]">{card.network.toUpperCase()}</span>
+                  <img src={card.network === "Mastercard" ? "/icons/mastercard.svg?v=2" : "/icons/visa.svg"} alt={card.network} className="size-10 object-contain" />
                 </div>
                 <p className="mt-6 font-mono text-sm tracking-[0.1em] tabular-nums">•••• •••• •••• {card.lastFour}</p>
                 <div className="mt-3 flex items-end justify-between gap-3">

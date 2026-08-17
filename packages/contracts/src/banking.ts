@@ -39,7 +39,7 @@ export const bankCardSchema = z.object({
   accountId: z.string(),
   holderName: z.string(),
   lastFour: z.string().length(4),
-  network: z.literal("Visa"),
+  network: z.enum(["Mastercard", "Visa"]),
   type: z.enum(["physical", "virtual"]),
   status: z.enum(["active", "frozen"]),
   spendingLimit: z.number().positive(),
@@ -50,7 +50,7 @@ export const bankCardSchema = z.object({
 
 export const cardDetailsSchema = z.object({
   cardId: z.string(),
-  number: z.string().regex(/^4\d{15}$/),
+  number: z.string().regex(/^(?:5[1-5]\d{14}|4\d{15})$/),
   securityCode: z.string().regex(/^\d{3}$/),
   expires: z.string().regex(/^(0[1-9]|1[0-2])\/\d{2}$/),
   revealExpiresAt: z.string().datetime(),
@@ -58,7 +58,7 @@ export const cardDetailsSchema = z.object({
 
 export const notificationSchema = z.object({
   id: z.string(),
-  type: z.literal("card_issued"),
+  type: z.enum(["card_issued", "support_message"]),
   title: z.string(),
   message: z.string(),
   resourceId: z.string().nullable(),

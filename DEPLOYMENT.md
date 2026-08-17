@@ -1,4 +1,4 @@
-# Deploy ClipX to Vercel
+# Deploy Ardenvia Bank to Vercel
 
 ## 1. Provision PostgreSQL
 
@@ -29,7 +29,7 @@ The copy is idempotent by primary key and prints source/target row counts. Back 
 
 ## 2. Create the API project
 
-Import this Git repository into Vercel as `clipx-api` and set Root Directory to `apps/api`.
+Import this Git repository into Vercel as `ardenvia-bank-api` and set Root Directory to `apps/api`.
 
 Set these environment variables for Production and Preview:
 
@@ -45,7 +45,7 @@ Do not expose `DIRECT_DATABASE_URL` to the deployed API unless an intentional de
 
 ## 3. Create the web project
 
-Import the same repository as `clipx-web` and set Root Directory to `apps/web`.
+Import the same repository as `ardenvia-bank-web` and set Root Directory to `apps/web`.
 
 Set:
 

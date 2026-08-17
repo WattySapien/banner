@@ -2,8 +2,16 @@ import { createCipheriv,createDecipheriv,createHmac,randomInt,randomBytes } from
 
 export type EncryptedPan={ciphertext:string;iv:string;authTag:string};
 
+export function generateMastercardPan(){
+  const prefix=randomInt(51,56);
+  const digits=[Math.floor(prefix/10),prefix%10];
+  while(digits.length<15)digits.push(randomInt(0,10));
+  digits.push(luhnCheckDigit(digits));
+  return digits.join("");
+}
+
 export function generateVisaPan(){
-  const digits=[4,0,0,0,0,0];
+  const digits=[4];
   while(digits.length<15)digits.push(randomInt(0,10));
   digits.push(luhnCheckDigit(digits));
   return digits.join("");

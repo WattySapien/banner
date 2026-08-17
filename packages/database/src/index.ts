@@ -3,11 +3,19 @@ import postgres from "postgres";
 let runtimeClient: ReturnType<typeof postgres> | undefined;
 const DATABASE_OPERATION_TIMEOUT_MS=12_000;
 
+export function resolveRuntimeDatabaseUrl(configuredUrl:string,nodeEnv=process.env.NODE_ENV){
+  // Keep the configured Supabase pooler endpoint in every environment. The
+  // transaction pooler (6543) is reachable over IPv4 locally, while changing
+  // it to the direct database port (5432) can force an unreachable IPv6 host.
+  void nodeEnv;
+  return configuredUrl;
+}
+
 export function getDatabase() {
   if (runtimeClient) return runtimeClient;
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is required");
-  runtimeClient = postgres(url, {
+  runtimeClient = postgres(resolveRuntimeDatabaseUrl(url), {
     max: 3,
     prepare: false,
     idle_timeout: 20,

@@ -34,7 +34,7 @@ export default function Landing() {
             <div className="mt-12 flex flex-wrap gap-x-7 gap-y-3 border-t pt-5 text-xs text-muted-foreground"><span>No monthly fee</span><span>Instant card controls</span><span>24/7 account access</span></div>
           </div>
           <div className="relative min-h-[28rem] overflow-hidden rounded-[1.75rem] bg-secondary lg:min-h-[38rem]">
-            <img src="/banking-hero.png" alt="ClipX customer reviewing his finances at home" className="absolute inset-0 h-full w-full object-cover" />
+            <img src="/banking-hero.png" alt="Ardenvia Bank customer reviewing his finances at home" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute bottom-5 left-5 right-5 max-w-sm rounded-2xl border border-white/60 bg-white/90 p-5 text-[#211a3a] shadow-[0_20px_60px_hsl(258_60%_32%/.16)] backdrop-blur-md sm:bottom-7 sm:left-7">
               <p className="text-xs font-medium text-[#7650db]">One clear account view</p>
               <p className="mt-2 text-lg font-semibold tracking-tight">Balances, cards, and activity stay together.</p>
@@ -54,7 +54,7 @@ export default function Landing() {
         <section className="px-5 py-20 sm:px-8 lg:px-12 lg:py-28"><div className="mx-auto flex max-w-[1344px] flex-col gap-8 rounded-[1.75rem] border bg-secondary p-8 sm:p-12 lg:flex-row lg:items-end lg:justify-between lg:p-16"><div><p className="text-sm font-medium text-primary">Ready when you are</p><h2 className="mt-3 max-w-2xl text-4xl font-semibold leading-[1.02] tracking-[-0.05em] sm:text-5xl">A better place for everyday money.</h2></div><Button asChild size="lg"><Link to="/signup">Get started <ArrowRight className="ml-2 size-4" /></Link></Button></div></section>
       </main>
 
-      <footer className="border-t px-5 py-7 text-xs text-muted-foreground sm:px-8 lg:px-12"><div className="mx-auto flex max-w-[1344px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p>© 2026 ClipX. All rights reserved.</p><div className="flex gap-5"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Accessibility</a></div></div></footer>
+      <footer className="border-t px-5 py-7 text-xs text-muted-foreground sm:px-8 lg:px-12"><div className="mx-auto flex max-w-[1344px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p>© 2026 Ardenvia Bank. All rights reserved.</p><div className="flex gap-5"><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Accessibility</a></div></div></footer>
     </div>
   );
 }
@@ -71,7 +71,7 @@ function MotionMarquee() {
     return () => media.revert();
   }, { scope });
 
-  return <section ref={scope} className="overflow-hidden border-y bg-card/70 py-4 backdrop-blur-md" aria-label="ClipX account features"><div data-marquee-track className="flex w-max will-change-transform">{[0, 1].map((copy) => <div key={copy} className="flex shrink-0 items-center">{items.map((item, index) => <div key={`${copy}-${item}`} className="flex items-center"><span className="whitespace-nowrap px-6 text-sm font-medium tracking-[-0.01em] sm:px-10 sm:text-base">{item}</span><span className={`size-2 rounded-full ${index % 3 === 0 ? "bg-primary" : index % 3 === 1 ? "bg-fuchsia-400" : "bg-cyan-400"}`} /></div>)}</div>)}</div></section>;
+  return <section ref={scope} className="overflow-hidden border-y bg-card/70 py-4 backdrop-blur-md" aria-label="Ardenvia Bank account features"><div data-marquee-track className="flex w-max will-change-transform">{[0, 1].map((copy) => <div key={copy} className="flex shrink-0 items-center">{items.map((item, index) => <div key={`${copy}-${item}`} className="flex items-center"><span className="whitespace-nowrap px-6 text-sm font-medium tracking-[-0.01em] sm:px-10 sm:text-base">{item}</span><span className={`size-2 rounded-full ${index % 3 === 0 ? "bg-primary" : index % 3 === 1 ? "bg-fuchsia-400" : "bg-cyan-400"}`} /></div>)}</div>)}</div></section>;
 }
 
 function ScrubHeading({ text }: { text: string }) {

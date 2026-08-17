@@ -8,6 +8,11 @@ import { formatCurrency } from "@/lib/banking";
 
 const formatCardNumber=(value:string)=>value.replace(/(.{4})/g,"$1 ").trim();
 
+function NetworkMark({network}:{network:BankCard["network"]}){
+  const isMastercard=String(network).toLowerCase()==="mastercard";
+  return <div className="flex size-12 items-center justify-center" aria-label={isMastercard?"Mastercard":"Visa"}><img src={isMastercard?"/icons/mastercard.svg?v=2":"/icons/visa.svg"} alt="" className="size-full object-contain"/></div>;
+}
+
 export function SecurePaymentCard({card,index,onToggleStatus,isUpdating}:{card:BankCard;index:number;onToggleStatus:()=>void;isUpdating:boolean}){
   const [details,setDetails]=useState<CardDetails>();
   const [isLoading,setIsLoading]=useState(false);
@@ -38,7 +43,7 @@ export function SecurePaymentCard({card,index,onToggleStatus,isUpdating}:{card:B
         <motion.div whileHover={reduceMotion?undefined:{rotateX:2.5,rotateY:-4,y:-4}} transition={{duration:.55,ease:[.32,.72,0,1]}} className={`relative aspect-[1.58/1] overflow-hidden rounded-[1.2rem] bg-gradient-to-br ${surface} p-4 text-white shadow-[0_22px_50px_hsl(258_60%_32%/.22)] [transform-style:preserve-3d] min-[380px]:rounded-[1.3rem] min-[380px]:p-5`}>
           <div className="absolute -right-16 -top-20 size-60 rounded-full border border-white/10"/><div className="absolute -bottom-24 -left-14 size-64 rounded-full border border-white/10"/><div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_22%,rgba(255,255,255,.13),transparent_28%)]"/>
           <div className="relative flex h-full flex-col [transform:translateZ(24px)]">
-            <div className="flex items-start justify-between"><div><p className="text-sm font-semibold tracking-[-0.01em]">ClipX</p><p className="mt-0.5 text-[9px] uppercase tracking-[0.2em] text-white/45">{card.type} debit</p></div><div className="text-right"><Wifi className="ml-auto size-5 rotate-90 text-white/70" strokeWidth={1.6}/><p className="mt-2 text-lg font-semibold italic tracking-[-0.06em] text-white/90">VISA</p></div></div>
+            <div className="flex items-start justify-between"><div><p className="text-sm font-semibold tracking-[-0.01em]">Ardenvia</p><p className="mt-0.5 text-[9px] uppercase tracking-[0.2em] text-white/45">{card.type} debit</p></div><div className="flex flex-col items-end gap-2"><Wifi className="size-5 rotate-90 text-white/70" strokeWidth={1.6}/><NetworkMark network={card.network}/></div></div>
             <div className="mt-auto">
               <motion.p key={isRevealed?"revealed":"masked"} initial={reduceMotion?false:{opacity:0,y:8}} animate={{opacity:1,y:0}} className="font-mono text-[0.82rem] tracking-[0.08em] tabular-nums min-[380px]:text-lg min-[380px]:tracking-[0.12em] sm:text-xl">{details?formatCardNumber(details.number):`•••• •••• •••• ${card.lastFour}`}</motion.p>
               <div className="mt-2.5 grid grid-cols-[1fr_auto_auto] items-end gap-2 min-[380px]:mt-4 min-[380px]:gap-4">

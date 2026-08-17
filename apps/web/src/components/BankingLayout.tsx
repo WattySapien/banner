@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { ThemeMenu } from "@/components/ThemeMenu";
+import { ContactSupport } from "@/components/ContactSupport";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import type { User } from "@clipx/contracts/schema";
@@ -34,7 +35,7 @@ const navigation = [
 export default function BankingLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, signOut } = useAuth();
-  const { data: accountUser } = useQuery<User>({ queryKey: ["/api/auth/user"] });
+  const { data: accountUser } = useQuery<User>({ queryKey: ["/api/auth/user"], staleTime: 15_000, refetchInterval: 30_000, refetchOnMount: true });
   const initials = `${accountUser?.firstName?.[0] ?? ""}${accountUser?.lastName?.[0] ?? ""}` || "LA";
   const isAdmin = Boolean(user?.isAdmin);
   const showAdminConsole = isAdmin && import.meta.env.DEV;
@@ -123,12 +124,15 @@ export default function BankingLayout({ children }: { children: React.ReactNode 
             <ThemeMenu />
             <NotificationCenter/>
             <NavLink to="/account" aria-label="Open account" className="ml-1 hidden items-center gap-3 rounded-xl border-l py-1 pl-4 pr-2 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex">
-              <ProfileAvatar src={accountUser?.profileImageUrl} initials={initials} alt={`${accountUser?.firstName??"Account"} profile`} className="size-9"/>
+              <ProfileAvatar src={accountUser?.profileImageUrl} userId={accountUser?.id} initials={initials} alt={`${accountUser?.firstName??"Account"} profile`} className="size-9"/>
               <div className="leading-tight">
                 <p className="text-sm font-semibold">{accountUser?.firstName ?? user?.firstName ?? "Account"}</p>
                 <p className="text-xs text-muted-foreground">Personal</p>
               </div>
             </NavLink>
+            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" onClick={logout} aria-label="Sign out" title="Sign out">
+              <LogOut className="size-[18px]" />
+            </Button>
             </div>
           </div>
         </header>
@@ -137,6 +141,7 @@ export default function BankingLayout({ children }: { children: React.ReactNode 
       <nav className="mobile-tab-bar fixed inset-x-0 bottom-0 z-40 flex border-t bg-card/95 px-1 pt-1 shadow-[0_-12px_35px_hsl(248_20%_12%/.07)] backdrop-blur-xl lg:hidden" aria-label="Primary account navigation">
         {navigation.map(({label,to,icon:Icon})=><NavLink key={to} to={to} className={({isActive})=>cn("flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[10px] font-medium text-muted-foreground transition-colors active:scale-[.98]",isActive&&"bg-primary/10 text-primary")}><Icon className="size-[18px]" strokeWidth={1.8}/><span className="truncate">{label}</span></NavLink>)}
       </nav>
+      <ContactSupport />
     </div>
   );
 }

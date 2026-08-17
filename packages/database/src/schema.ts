@@ -95,7 +95,7 @@ export const cards = pgTable("cards", {
   accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
   holderName: text("holder_name").notNull(),
   lastFour: text("last_four").notNull(),
-  network: text("network").notNull().default("Visa"),
+  network: text("network").notNull().default("Mastercard"),
   type: text("type", { enum: ["physical", "virtual"] }).notNull(),
   status: text("status", { enum: ["active", "frozen"] }).notNull(),
   spendingLimitCents: integer("spending_limit_cents").notNull(),
@@ -110,7 +110,7 @@ export const cards = pgTable("cards", {
 export const notifications = pgTable("notifications", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  type: text("type", { enum: ["card_issued"] }).notNull(),
+  type: text("type", { enum: ["card_issued", "support_message"] }).notNull(),
   title: text("title").notNull(),
   message: text("message").notNull(),
   resourceId: text("resource_id"),
@@ -141,3 +141,14 @@ export const userPreferences = pgTable("user_preferences", {
   monthlySummary: integer("monthly_summary").notNull().default(1),
   showBalances: integer("show_balances").notNull().default(1),
 });
+
+export const supportMessages = pgTable("support_messages", {
+  id: text("id").primaryKey(),
+  customerUserId: text("customer_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  senderUserId: text("sender_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  senderRole: text("sender_role", { enum: ["customer", "admin"] }).notNull(),
+  body: text("body").notNull(),
+  readByCustomer: integer("read_by_customer").notNull().default(0),
+  readByAdmin: integer("read_by_admin").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [index("support_messages_customer_created_idx").on(table.customerUserId, table.createdAt)]);

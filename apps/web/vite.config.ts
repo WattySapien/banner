@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => ({
       output: {
         manualChunks(id) {
           if (id.includes("/node_modules/gsap/") || id.includes("/node_modules/@gsap/")) return "motion-vendor";
+          if (id.includes("/node_modules/framer-motion/")) return "motion-vendor";
+          if (id.includes("/node_modules/recharts/")) return "charts-vendor";
+          if (id.includes("/node_modules/@radix-ui/")) return "ui-vendor";
         },
       },
     },

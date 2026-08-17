@@ -6,9 +6,10 @@ import type { Account, AppNotification, BankCard, BankingOverview, BankTransacti
 import type { AdminCustomer, AdminCustomerDetails, AdminStats, AdminTransaction, AdminTransactionDetails, CreateAdminAccount, CreateAdminCard, CreateAdminCustomer, UpdateAdminAccount, UpdateAdminUser } from "@clipx/contracts/admin";
 import type { AccountSettings, ChangePassword, UpdatePreferences, UpdateProfile } from "@clipx/contracts/settings";
 import type { LocalAuthUser } from "@clipx/contracts/auth";
+import type { SupportMessage, SupportSenderRole } from "@clipx/contracts/support";
 import { atStage } from "./diagnostics.js";
 import { config } from "./config.js";
-import { decryptPan,encryptPan,fingerprintPan,generateExpiry,generateSecurityCode,generateVisaPan } from "./card-security.js";
+import { decryptPan,encryptPan,fingerprintPan,generateExpiry,generateMastercardPan,generateSecurityCode,generateVisaPan } from "./card-security.js";
 
 const scrypt = promisify(nodeScrypt);
 const cents = (value: number) => Math.round(value * 100);
@@ -23,10 +24,12 @@ type TransactionDetailsRow = TransactionRow & { account_name:string; account_typ
 type InternalTransferRow = { id:string; user_id:string; source_account_id:string; destination_account_id:string; amount_cents:number; note:string; reference:string; status:"completed"; created_at:string|Date };
 type PeerTransferRow = { id:string; sender_user_id:string; source_account_id:string; recipient_user_id:string; destination_account_id:string; amount_cents:number; note:string; reference:string; status:"completed"; created_at:string|Date };
 type PeerRecipientRow = AccountRow & { user_id:string; first_name:string; last_name:string };
-type CardRow = { id:string; account_id:string; holder_name:string; last_four:string; network:"Visa"; type:BankCard["type"]; status:BankCard["status"]; spending_limit_cents:number; expires:string; pan_ciphertext:string|null; pan_iv:string|null; pan_auth_tag:string|null; pan_fingerprint:string|null; created_at:string|Date };
+type CardRow = { id:string; account_id:string; holder_name:string; last_four:string; network:BankCard["network"]; type:BankCard["type"]; status:BankCard["status"]; spending_limit_cents:number; expires:string; pan_ciphertext:string|null; pan_iv:string|null; pan_auth_tag:string|null; pan_fingerprint:string|null; created_at:string|Date };
 type BeneficiaryRow = { id:string; name:string; bank_name:string; masked_account:string; initials:string };
-type NotificationRow={id:string;type:"card_issued";title:string;message:string;resource_id:string|null;is_read:number;created_at:string|Date};
+type NotificationRow={id:string;type:"card_issued"|"support_message";title:string;message:string;resource_id:string|null;is_read:number;created_at:string|Date};
 type AvatarRow={content_type:"image/jpeg"|"image/png"|"image/webp";image_data:Buffer;updated_at:string|Date};
+type SupportMessageRow={id:string;customer_user_id:string;sender_user_id:string;sender_role:SupportSenderRole;body:string;read_by_customer:number;read_by_admin:number;created_at:string|Date;sender_name:string};
+type AdminCardInput=Omit<CreateAdminCard,"network"> & {network?:CreateAdminCard["network"]};
 
 export type AvatarUpload={contentType:AvatarRow["content_type"];data:Buffer};
 export type AvatarFile=AvatarUpload&{updatedAt:string};
@@ -50,6 +53,7 @@ const toTransaction = (row: TransactionRow): BankTransaction => ({ id:row.id, ac
 const toTransactionDetails = (row:TransactionDetailsRow):TransactionDetails => ({ id:row.id, description:row.description, merchant:row.merchant, category:row.category, amount:dollars(row.amount_cents), direction:row.direction, status:row.status, reference:row.reference, createdAt:iso(row.created_at), accountName:row.account_name, accountType:row.account_type, accountMaskedNumber:row.account_masked_number, transferKind:row.peer_transfer_id?"account_number":row.internal_transfer_id?"between_accounts":"standard" });
 const toCard = (row: CardRow): BankCard => ({ id:row.id, accountId:row.account_id, holderName:row.holder_name, lastFour:row.last_four, network:row.network, type:row.type, status:row.status, spendingLimit:dollars(row.spending_limit_cents), expires:row.expires, hasSecureDetails:Boolean(row.pan_ciphertext&&row.pan_iv&&row.pan_auth_tag), issuedAt:iso(row.created_at) });
 const toNotification=(row:NotificationRow):AppNotification=>({id:row.id,type:row.type,title:row.title,message:row.message,resourceId:row.resource_id,isRead:Boolean(row.is_read),createdAt:iso(row.created_at)});
+const toSupportMessage=(row:SupportMessageRow,viewerRole:SupportSenderRole):SupportMessage=>({id:row.id,customerUserId:row.customer_user_id,senderUserId:row.sender_user_id,senderRole:row.sender_role,senderName:row.sender_name,body:row.body,isRead:Boolean(viewerRole==="customer"?row.read_by_customer:row.read_by_admin),createdAt:iso(row.created_at)});
 const requireCardDataKey=()=>{if(!config.cardDataEncryptionKey)throw Object.assign(new Error("Card security is not configured"),{status:503});return config.cardDataEncryptionKey;};
 
 async function createPasswordHash(password: string, salt = randomBytes(16).toString("hex")) {
@@ -86,6 +90,9 @@ export interface IStorage {
   getNotifications(userId:string): Promise<AppNotification[]>;
   markNotificationRead(userId:string,notificationId:string): Promise<AppNotification>;
   markAllNotificationsRead(userId:string): Promise<void>;
+  getSupportMessages(customerUserId:string,viewerRole:SupportSenderRole): Promise<SupportMessage[]>;
+  createSupportMessage(customerUserId:string,senderUserId:string,senderRole:SupportSenderRole,body:string): Promise<SupportMessage>;
+  markSupportMessagesRead(customerUserId:string,viewerRole:SupportSenderRole): Promise<void>;
   getBeneficiaries(userId:string): Promise<Beneficiary[]>;
   createTransfer(userId:string,transfer:CreateTransfer): Promise<BankTransaction>;
   createInternalTransfer(userId:string,transfer:CreateInternalTransfer): Promise<InternalTransferReceipt>;
@@ -104,7 +111,9 @@ export interface IStorage {
   createAdminAccount(userId:string,input:CreateAdminAccount): Promise<Account>;
   updateAdminAccount(userId:string,accountId:string,update:UpdateAdminAccount): Promise<Account>;
   assignAdminAccountNumber(userId:string,accountId:string): Promise<Account>;
-  createAdminCard(userId:string,input:CreateAdminCard): Promise<BankCard>;
+  createAdminCard(userId:string,input:AdminCardInput): Promise<BankCard>;
+  revokeAdminCard(userId:string,cardId:string): Promise<BankCard>;
+  deleteAdminCard(userId:string,cardId:string): Promise<void>;
   getAdminTransactions(): Promise<AdminTransaction[]>;
   getAdminTransaction(transactionId:string): Promise<AdminTransactionDetails>;
 }
@@ -199,7 +208,7 @@ export class PostgresStorage implements IStorage {
 
   async getAccounts(userId:string) {
     const sql = getDatabase();
-    const rows = await sql<AccountRow[]>`SELECT id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps FROM accounts WHERE user_id=${userId} ORDER BY type`;
+    const rows = await sql<AccountRow[]>`SELECT id,name,type,account_number,masked_number,currency,balance_cents,available_balance_cents,interest_rate_bps FROM accounts WHERE user_id=${userId} ORDER BY type,id`;
     return rows.map(toAccount);
   }
 
@@ -252,6 +261,46 @@ export class PostgresStorage implements IStorage {
   async markAllNotificationsRead(userId:string){
     const sql=getDatabase();
     await sql`UPDATE notifications SET is_read=1 WHERE user_id=${userId} AND is_read=0`;
+  }
+
+  async getSupportMessages(customerUserId:string,viewerRole:SupportSenderRole){
+    const sql=getDatabase();
+    const rows=await sql<SupportMessageRow[]>`
+      SELECT m.*,trim(u.first_name||' '||u.last_name) sender_name
+      FROM support_messages m JOIN users u ON u.id=m.sender_user_id
+      WHERE m.customer_user_id=${customerUserId}
+      ORDER BY m.created_at,m.id LIMIT 500`;
+    return rows.map((row)=>toSupportMessage(row,viewerRole));
+  }
+
+  async createSupportMessage(customerUserId:string,senderUserId:string,senderRole:SupportSenderRole,body:string){
+    const sql=getDatabase();
+    const created=await sql.begin(async(tx)=>{
+      const [customer]=await tx<Array<{id:string}>>`SELECT id FROM users WHERE id=${customerUserId}`;
+      const [sender]=await tx<Array<{id:string;sender_name:string;is_admin:number}>>`SELECT id,trim(first_name||' '||last_name) sender_name,is_admin FROM users WHERE id=${senderUserId}`;
+      if(!customer)throw Object.assign(new Error("Customer not found"),{status:404});
+      if(!sender)throw Object.assign(new Error("Message sender not found"),{status:404});
+      if(senderRole==="customer"&&senderUserId!==customerUserId)throw Object.assign(new Error("Customers can only message from their own account"),{status:403});
+      if(senderRole==="admin"&&!Number(sender.is_admin))throw Object.assign(new Error("Administrator access required"),{status:403});
+      const [row]=await tx<SupportMessageRow[]>`
+        INSERT INTO support_messages (id,customer_user_id,sender_user_id,sender_role,body,read_by_customer,read_by_admin)
+        VALUES (${randomUUID()},${customerUserId},${senderUserId},${senderRole},${body},${Number(senderRole==="customer")},${Number(senderRole==="admin")})
+        RETURNING *,${sender.sender_name}::text sender_name`;
+      if(senderRole==="customer"){
+        const admins=await tx<Array<{id:string}>>`SELECT id FROM users WHERE is_admin=1 AND is_active=1 AND id<>${senderUserId}`;
+        for(const admin of admins)await tx`INSERT INTO notifications (id,user_id,type,title,message,resource_id) VALUES (${randomUUID()},${admin.id},'support_message','New support message',${`${sender.sender_name} sent you a new support message.`},${customerUserId})`;
+      }else{
+        await tx`INSERT INTO notifications (id,user_id,type,title,message,resource_id) VALUES (${randomUUID()},${customerUserId},'support_message','Support replied',${`${sender.sender_name} replied to your support conversation.`},${customerUserId})`;
+      }
+      return row;
+    });
+    return toSupportMessage(created,senderRole);
+  }
+
+  async markSupportMessagesRead(customerUserId:string,viewerRole:SupportSenderRole){
+    const sql=getDatabase();
+    if(viewerRole==="customer")await sql`UPDATE support_messages SET read_by_customer=1 WHERE customer_user_id=${customerUserId} AND read_by_customer=0`;
+    else await sql`UPDATE support_messages SET read_by_admin=1 WHERE customer_user_id=${customerUserId} AND read_by_admin=0`;
   }
 
   async getBeneficiaries(userId:string) {
@@ -529,7 +578,7 @@ export class PostgresStorage implements IStorage {
     throw Object.assign(new Error("A unique account number could not be allocated. Try again."),{status:503});
   }
 
-  async createAdminCard(userId:string,input:CreateAdminCard){
+  async createAdminCard(userId:string,input:AdminCardInput){
     const sql=getDatabase();
     return atDatabaseStage("admin.card.database.create",()=>sql.begin(async(tx)=>{
       const [owner]=await tx<Array<{account_id:string;holder_name:string}>>`
@@ -537,14 +586,32 @@ export class PostgresStorage implements IStorage {
         FROM accounts a JOIN users u ON u.id=a.user_id
         WHERE a.id=${input.accountId} AND a.user_id=${userId}`;
       if(!owner)throw Object.assign(new Error("Customer account not found"),{status:404});
-      const key=requireCardDataKey(),id=randomUUID(),pan=generateVisaPan(),expires=generateExpiry(),encrypted=encryptPan(pan,key);
+      const network=input.network??"Mastercard";
+      const key=requireCardDataKey(),id=randomUUID(),pan=network==="Visa"?generateVisaPan():generateMastercardPan(),expires=generateExpiry(),encrypted=encryptPan(pan,key);
       const [row]=await tx<CardRow[]>`
         INSERT INTO cards (id,account_id,holder_name,last_four,network,type,status,spending_limit_cents,expires,pan_ciphertext,pan_iv,pan_auth_tag,pan_fingerprint)
-        VALUES (${id},${owner.account_id},${owner.holder_name},${pan.slice(-4)},'Visa',${input.type},${input.status},${cents(input.spendingLimit)},${expires},${encrypted.ciphertext},${encrypted.iv},${encrypted.authTag},${fingerprintPan(pan,key)})
+        VALUES (${id},${owner.account_id},${owner.holder_name},${pan.slice(-4)},${network},${input.type},${input.status},${cents(input.spendingLimit)},${expires},${encrypted.ciphertext},${encrypted.iv},${encrypted.authTag},${fingerprintPan(pan,key)})
         RETURNING *`;
-      await tx`INSERT INTO notifications (id,user_id,type,title,message,resource_id) VALUES (${randomUUID()},${userId},'card_issued','Your new card is ready',${`${input.type[0]?.toUpperCase()}${input.type.slice(1)} Visa ending in ${pan.slice(-4)} was added to your account.`},${id})`;
+      await tx`INSERT INTO notifications (id,user_id,type,title,message,resource_id) VALUES (${randomUUID()},${userId},'card_issued','Your new card is ready',${`${input.type[0]?.toUpperCase()}${input.type.slice(1)} ${network} ending in ${pan.slice(-4)} was added to your account.`},${id})`;
       return toCard(row);
     }));
+  }
+
+  async revokeAdminCard(userId:string,cardId:string){
+    const sql=getDatabase();
+    const [row]=await sql<CardRow[]>`UPDATE cards c SET status='frozen' FROM accounts a WHERE c.id=${cardId} AND c.account_id=a.id AND a.user_id=${userId} RETURNING c.*`;
+    if(!row)throw Object.assign(new Error("Card not found"),{status:404});
+    return toCard(row);
+  }
+
+  async deleteAdminCard(userId:string,cardId:string):Promise<void>{
+    const sql=getDatabase();
+    await sql.begin(async(tx)=>{
+      const [card]=await tx<Array<{id:string}>>`SELECT c.id FROM cards c JOIN accounts a ON a.id=c.account_id WHERE c.id=${cardId} AND a.user_id=${userId}`;
+      if(!card)throw Object.assign(new Error("Card not found"),{status:404});
+      await tx`DELETE FROM notifications WHERE user_id=${userId} AND type='card_issued' AND resource_id=${cardId}`;
+      await tx`DELETE FROM cards WHERE id=${cardId}`;
+    });
   }
 
   async getAdminTransactions() {

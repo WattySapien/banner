@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/banking";
 import { cn } from "@/lib/utils";
+import { ListPagination } from "@/components/ListPagination";
 
 type TransactionFilter = "all" | "completed" | "pending" | "review";
 
@@ -13,9 +14,10 @@ export default function TransactionMonitor() {
   const navigate=useNavigate();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TransactionFilter>("all");
+  const [page,setPage]=useState(1); const pageSize=12;
   const { data: transactions = [], isLoading } = useQuery<AdminTransaction[]>({ queryKey: ["/api/admin/transactions"] });
 
-  const filtered = useMemo(() => transactions.filter((transaction) => {
+  const allFiltered = useMemo(() => transactions.filter((transaction) => {
     const matchesSearch = `${transaction.merchant} ${transaction.customerName} ${transaction.reference}`.toLowerCase().includes(search.trim().toLowerCase());
     const matchesFilter = filter === "all" || transaction.status === filter || (filter === "review" && transaction.risk === "review");
     return matchesSearch && matchesFilter;
@@ -23,6 +25,7 @@ export default function TransactionMonitor() {
 
   const reviewCount = transactions.filter((transaction) => transaction.risk === "review").length;
   const completedVolume = transactions.filter((transaction) => transaction.status === "completed").reduce((sum, transaction) => sum + transaction.amount, 0);
+  const filtered=allFiltered.slice((page-1)*pageSize,page*pageSize);
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -68,6 +71,7 @@ export default function TransactionMonitor() {
               ))}</tbody>
             </table>
           </div>
+          <div className="p-4 sm:p-5"><ListPagination page={page} pageSize={pageSize} total={allFiltered.length} onPageChange={setPage}/></div>
         </>)}
       </section>
     </div>

@@ -3,17 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>ClipX — Everyday banking, clearly</title>
+    <title>Ardenvia Bank — Everyday banking, clearly</title>
     <meta name="description" content="Manage everyday spending, savings, transfers, and cards from one clear account." />
     <meta name="theme-color" content="#f5f4fa" />
-    <meta property="og:title" content="ClipX — Everyday banking, clearly" />
+    <meta property="og:title" content="Ardenvia Bank — Everyday banking, clearly" />
     <meta property="og:description" content="Your money, without the noise." />
     <meta property="og:image" content="/banking-hero.png" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="icon" type="image/svg+xml" href="/ardenvia-icon.svg" />
+    <link rel="alternate icon" type="image/svg+xml" href="/ardenvia-icon.svg" />
+    <link rel="apple-touch-icon" href="/ardenvia-icon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
     <script>
       (() => {
         try {
-          const preference = localStorage.getItem("clipx-theme") || "system";
+          const preference = localStorage.getItem("ardenvia-bank-theme") || localStorage.getItem("clipx-theme") || "system";
           const isDark = preference === "dark" || (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", isDark);
           document.documentElement.style.colorScheme = isDark ? "dark" : "light";

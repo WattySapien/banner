@@ -34,6 +34,7 @@ export const createAdminCustomerSchema = z.object({
 
 export const createAdminCardSchema = z.object({
   accountId: z.string().min(1),
+  network: z.enum(["Mastercard", "Visa"]).default("Mastercard"),
   type: z.enum(["physical", "virtual"]),
   status: z.enum(["active", "frozen"]).default("active"),
   spendingLimit: z.coerce.number().min(100).max(25_000),

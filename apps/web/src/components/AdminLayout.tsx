@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { User } from "@clipx/contracts/schema";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { ThemeMenu } from "@/components/ThemeMenu";
+import { NotificationCenter } from "@/components/NotificationCenter";
 
 const adminNavigation = [
   { label: "Overview", to: "/admin", icon: LayoutDashboard, end: true },
@@ -47,11 +48,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="ml-auto flex items-center gap-1">
             <Button asChild variant="ghost" size="icon" className="hidden lg:inline-flex" title="Customer view"><NavLink to="/dashboard" aria-label="Open customer view"><ArrowLeft className="size-[18px]" /></NavLink></Button>
             <ThemeMenu />
+            <NotificationCenter />
             <div className="ml-2 hidden border-l pl-4 text-right sm:block">
               <p className="text-sm font-semibold">{user?.firstName ?? "Administrator"}</p>
               <p className="text-xs text-muted-foreground">Administrator</p>
             </div>
-            <ProfileAvatar src={accountUser?.profileImageUrl} initials={`${accountUser?.firstName?.[0]??""}${accountUser?.lastName?.[0]??""}`||"CX"} alt={`${accountUser?.firstName??"Administrator"} profile`} className="ml-2 size-9"/>
+            <ProfileAvatar src={accountUser?.profileImageUrl} userId={accountUser?.id} initials={`${accountUser?.firstName?.[0]??""}${accountUser?.lastName?.[0]??""}`||"CX"} alt={`${accountUser?.firstName??"Administrator"} profile`} className="ml-2 size-9"/>
             <Button variant="ghost" size="icon" onClick={logout} aria-label="Sign out"><LogOut className="size-[18px]" /></Button>
           </div>
         </div>

@@ -14,7 +14,9 @@ type AuthContextType={
 export const AuthContext=createContext<AuthContextType|undefined>(undefined);
 
 async function authRequest(path:string,options?:RequestInit){
-  const response=await fetch(path,{...options,credentials:"include",headers:{...(options?.body?{"Content-Type":"application/json"}:{}),...options?.headers}});
+  const request=()=>fetch(path,{...options,credentials:"include",headers:{...(options?.body?{"Content-Type":"application/json"}:{}),...options?.headers}});
+  let response=await request();
+  if((!options?.method||options.method==="GET")&&response.status>=500){await new Promise((resolve)=>window.setTimeout(resolve,400));response=await request();}
   if(!response.ok){
     const error=await response.json().catch(()=>({message:response.statusText})) as {message?:string;code?:string;stage?:string;requestId?:string};
     const diagnostic=[error.code,error.stage,error.requestId?`request ${error.requestId}`:undefined].filter(Boolean).join(" · ");

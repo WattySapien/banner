@@ -1,6 +1,6 @@
-# ClipX Banking API
+# Ardenvia Bank Banking API
 
-The Express API is exposed below `/api`. JSON request bodies are limited to 1 MB. Except for health, API metadata, login, signup and logout, endpoints require the `clipx_session` HTTP-only cookie.
+The Express API is exposed below `/api`. JSON request bodies are limited to 1 MB. Except for health, API metadata, login, signup and logout, endpoints require the HTTP-only session cookie.
 
 ## Public endpoints
 
@@ -24,6 +24,9 @@ Login and signup accept `{ "email": "...", "password": "..." }`. Passwords must 
 | GET | `/api/transactions` | Transaction history |
 | GET | `/api/cards` | Cards |
 | PATCH | `/api/cards/:cardId` | Freeze/unfreeze or change a card limit |
+| GET | `/api/support/messages` | Current customer's support conversation |
+| POST | `/api/support/messages` | Send a customer support message |
+| PATCH | `/api/support/messages/read` | Mark administrator replies as read |
 | GET | `/api/beneficiaries` | Transfer recipients |
 | POST | `/api/transfers` | Atomically create a transfer |
 | GET | `/api/settings` | Profile and preferences |
@@ -44,6 +47,9 @@ These routes additionally require the session user to have administrator access.
 | POST | `/api/admin/users` | Create a customer and optional account |
 | GET | `/api/admin/users/:userId` | Customer details |
 | PATCH | `/api/admin/users/:userId` | Update identity, status or role |
+| GET | `/api/admin/users/:userId/support/messages` | Customer support conversation |
+| POST | `/api/admin/users/:userId/support/messages` | Reply to the customer as an administrator |
+| PATCH | `/api/admin/users/:userId/support/messages/read` | Mark customer messages as read |
 | GET | `/api/admin/transactions` | Cross-customer transaction monitoring |
 
 Validation errors return `400`, missing authentication returns `401`, insufficient permissions return `403`, missing records return `404`, conflicts return `409`, and rejected business operations return `422`.

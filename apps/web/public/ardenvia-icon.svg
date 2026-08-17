@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Ardenvia Bank icon</title>
+  <desc id="desc">A bright A-shaped bank mark on a deep violet field</desc>
+  <rect width="96" height="96" rx="24" fill="#7255d8"/>
+  <path d="M48 17 19 76h14l6-13h18l6 13h14L48 17Zm0 22 5.5 13h-11L48 39Z" fill="#fff"/>
+  <path d="M39 63h18" stroke="#c9bbff" stroke-width="4" stroke-linecap="round"/>
+</svg>

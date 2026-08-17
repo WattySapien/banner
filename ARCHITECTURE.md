@@ -1,6 +1,6 @@
-# ClipX architecture
+# Ardenvia Bank architecture
 
-ClipX is an npm-workspaces monorepo with independently deployable web and API applications.
+Ardenvia Bank is an npm-workspaces monorepo with independently deployable web and API applications.
 
 ```text
 Browser -> apps/web (Vite/React)
@@ -31,7 +31,11 @@ Email/password authentication remains application-managed. Login and signup issu
 
 `DATABASE_URL` is the Supabase transaction-pooler connection used by serverless runtime traffic. Prepared statements are disabled for transaction-pooler compatibility. `DIRECT_DATABASE_URL` is reserved for migrations and administration.
 
+During local development, a Supabase transaction-pooler URL on port 6543 is automatically converted to the corresponding session-pooler port 5432. This avoids repeated short-lived transaction-pooler connection stalls in the long-running local API while production serverless functions continue using port 6543.
+
 Transfers lock the source account with `SELECT ... FOR UPDATE` and update the balance and transaction record in one database transaction.
+
+Support conversations are persisted by customer user ID. Customer routes derive that ID exclusively from the authenticated session. Administrator conversation routes use the selected customer ID only after the existing local-network and administrator authorization checks pass.
 
 ## Local development
 

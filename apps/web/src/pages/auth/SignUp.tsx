@@ -73,11 +73,11 @@ export default function SignUpPage() {
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <label htmlFor="firstName" className="text-sm font-medium leading-none">First name</label>
-            <Input id="firstName" autoComplete="given-name" {...register('firstName')} error={errors.firstName?.message} />
+            <Input id="firstName" data-testid="signup-first-name" autoComplete="given-name" {...register('firstName')} error={errors.firstName?.message} />
           </div>
           <div className="space-y-2">
             <label htmlFor="lastName" className="text-sm font-medium leading-none">Last name</label>
-            <Input id="lastName" autoComplete="family-name" {...register('lastName')} error={errors.lastName?.message} />
+            <Input id="lastName" data-testid="signup-last-name" autoComplete="family-name" {...register('lastName')} error={errors.lastName?.message} />
           </div>
         </div>
         <div className="space-y-2">
@@ -89,6 +89,7 @@ export default function SignUpPage() {
           </label>
           <Input
             id="email"
+            data-testid="auth-email"
             type="email"
             placeholder="name@example.com"
             autoComplete="email"
@@ -106,6 +107,7 @@ export default function SignUpPage() {
           </label>
           <PasswordInput
             id="password"
+            data-testid="auth-password"
             placeholder="••••••••"
             autoComplete="new-password"
             visibilityLabel="password"
@@ -126,6 +128,7 @@ export default function SignUpPage() {
           </label>
           <PasswordInput
             id="confirmPassword"
+            data-testid="signup-confirm-password"
             placeholder="••••••••"
             autoComplete="new-password"
             visibilityLabel="password confirmation"
@@ -134,7 +137,7 @@ export default function SignUpPage() {
           />
         </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <Button type="submit" className="w-full" disabled={isLoading} data-testid="signup-submit">
           {isLoading ? 'Creating account...' : 'Create account'}
         </Button>
       </form>
